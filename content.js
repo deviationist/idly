@@ -64,6 +64,8 @@ if (!window.__idly) {
   function nudge() {
     dismissSessionDialogs();
     simulateActivity();
+    // Visible with the console's "Verbose" level; handy when testing a new site.
+    console.debug(`[Idly] nudge at ${new Date().toLocaleTimeString()} (tab ${document.visibilityState}, focus ${document.hasFocus()})`);
   }
 
   // React as soon as a warning dialog appears rather than waiting for the next tick.
