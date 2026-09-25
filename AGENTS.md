@@ -8,34 +8,71 @@ Idly is a Chromium extension that keeps chosen sites (online banking, say) from 
 - `minimum_chrome_version` is 120, which is where the 30-second minimum alarm period comes from. Feel free to use any API available in that version.
 - ES modules everywhere except `content.js`. The service worker is `"type": "module"`, and the popup loads `popup.js` as a module. Content scripts can't be modules, so `content.js` is a plain script and can't import `shared.js`.
 - Match the existing style: small functions, a short comment only where the *why* isn't obvious, no classes.
+- The repo is public. Use `example.com`-style names in code, docs and tests, never real banks or personal details.
 
 ## Architecture
 
 | File | Role |
 |---|---|
-| `manifest.json` | Permissions: `storage`, `alarms`, `scripting`, `activeTab`. Host access is an **optional** `*://*/*`, granted per domain at runtime |
-| `shared.js` | `DEFAULTS`, `patternFor(entry)`, `covers(entry, host)`, `normalizeDomain(input)`. The single source of truth for site-entry matching |
-| `background.js` | Service worker. Re-syncs everything whenever `chrome.storage.sync` changes: registers `content.js` dynamically, recreates the alarm, injects into tabs that are already open, then `refreshTabs` updates the badge and sets `autoDiscardable: false` on enabled tabs (Memory Saver would otherwise discard a background bank tab, which silences Idly and reloads the tab into a login page). Each alarm tick sends `{type: "idly:nudge"}` to matching tabs |
+| `manifest.json` | Permissions: `storage`, `alarms`, `scripting`, `activeTab`, `offscreen`. Host access is an **optional** `*://*/*`, granted per entry at runtime |
+| `shared.js` | Pure site-entry logic with no browser APIs: `parseInput` (cleaning and validation), `planAdd` (duplicate and overlap rules), `covers`, `patternFor`, `stripWww`, `clampInterval`, and the user-facing `MESSAGES` |
+| `background.js` | Service worker. Re-syncs whenever `chrome.storage.sync` changes: `pruneGrants` revokes unneeded host permissions, it registers `content.js` dynamically, recreates the alarm and injects into open tabs, then `refreshTabs` sets the badge and `autoDiscardable: false` on enabled tabs (Memory Saver would otherwise discard a background bank tab, which silences Idly and reloads the tab into a login page). Each alarm tick sends `{type: "idly:nudge"}` to matching tabs. It also swaps the toolbar icon on `{type: "idly:scheme"}` |
+| `offscreen.html` / `offscreen.js` | Hidden offscreen document (reason `MATCH_MEDIA`). Service workers have no `matchMedia`, so this page reports light or dark to `background.js` |
 | `content.js` | On a nudge: dismisses session-warning dialogs, then dispatches synthetic mouse, pointer, Shift and scroll events. A `MutationObserver` also dismisses dialogs as soon as they appear. Guarded by `window.__idly` because it can be injected twice |
-| `popup.html` / `popup.js` | GUI: the current page toggle, the domain list with add/remove, the nudge interval |
+| `popup.html` / `popup.js` | GUI: the This page card, the list of active websites, the add form, the nudge interval |
+| `icons/light/`, `icons/dark/` | Toolbar icons: deep green (design option b) for light toolbars, pale green (option c) for dark ones. The manifest points at `light/` |
+| `design/` | The Claude Design handoff. See "GUI and design" |
+| `test/shared.test.mjs` | Unit tests for `shared.js` |
 
-**State** lives in `chrome.storage.sync` as `{ sites: string[], intervalMin: number }`. `sites` holds site entries such as `example.com` or `*.example.com` (see below). The popup writes storage and the background reacts, so the popup never talks to the background directly.
+**State** lives in `chrome.storage.sync` as `{ sites: string[], intervalMin: number }`. The popup writes storage and the background reacts, so the popup never talks to the background directly.
 
 **Site entries** come in two forms:
 - `example.com` is an **exact host**. It maps to `*://example.com/*`, and `www.example.com` is not included.
 - `*.example.com` is a **wildcard**. It maps to `*://*.example.com/*`, which in Chrome also matches `example.com` itself.
 
-`normalizeDomain` strips the scheme, path and port and keeps a leading `*.`. It deliberately keeps `www.`, because with exact matching `www.example.com` is a different entry. **Keep me logged in** adds the current tab's exact hostname. In the add form, the **Include subdomains** checkbox (`#subdomains`) adds the `*.` prefix when the entry is saved. Typing `*.` ticks the box, and unticking the box removes a typed `*.`, so the two always agree. `covers()` has to agree with Chrome's match-pattern semantics, because the popup uses it to show the "via" status while Chrome uses the pattern to inject the script.
+`covers()` has to agree with Chrome's match-pattern semantics, because the popup uses it for the "via" status and the overlap rules, while Chrome uses the pattern to inject the script.
+
+**Adding** (see `planAdd`):
+- **Keep me logged in** adds the current tab's exact host.
+- The form adds an exact host or, when **Include subdomains** (`#subdomains`, ticked by default) is on, a wildcard. Wildcards drop a leading `www.`.
+- The duplicate and overlap rules, in order:
+  1. An entry that's already listed → "Already in the list."
+  2. An entry inside an existing wildcard → "Already covered by *.p."
+  3. A new wildcard **replaces** the exact hosts and narrower wildcards it covers, with a notice.
+
+**Input handling** (see `popup.js`):
+- A typed or pasted `*.` is taken out of the text and ticks the checkbox. The design draws the `*.` itself with CSS.
+- Pasted URLs are cleaned to a hostname straight away.
+- `parseInput` rejects the following, and every rejection has a message in `MESSAGES`:
+  - empty input
+  - names without a TLD (including `localhost`)
+  - IP addresses
+  - bad characters or bad label rules
+  - all-digit TLDs
 
 ## Invariants: don't break these
 
 - **Only click inside session dialogs.** `dismissSessionDialogs` clicks a button only when it sits inside a dialog-like element *whose text matches `SESSION_TEXT`* and the button's label matches `CONTINUE_TEXT`. This is what stops Idly from clicking "Continue" on a payment confirmation on a banking site. Never widen it to buttons outside dialogs, and never drop the `SESSION_TEXT` check.
 - **Never click logout.** `CONTINUE_TEXT` is anchored (`^`) to the start of the label. Check that new words can't match logout or cancel labels.
 - **Synthetic keys must be inert.** Only a lone Shift is dispatched. Don't add keys that could type text, submit forms or trigger shortcuts.
-- **`chrome.permissions.request` must run synchronously inside the click or submit handler.** Any `await` before it loses the user gesture and Chrome rejects the request. See `addSite` in `popup.js`.
-- **Popup element IDs are a contract** with `DESIGN_PROMPT.md` (the GUI is redesigned in Claude Design and dropped back in). The IDs are `current-host`, `current-status`, `current-btn`, `sites`, `add`, `domain`, `subdomains`, `error`, `interval`. The classes are `on`, `primary`, `muted`. If you change one, update `DESIGN_PROMPT.md` too.
-- **The popup must work in light and dark mode.** Colours are custom properties on `:root`, overridden under `prefers-color-scheme: dark`. `color-scheme: light dark` keeps native controls themed. Text keeps WCAG AA contrast (4.5:1) in both themes: `--accent` is for button backgrounds and `--ok` for status text. Check both themes whenever you touch the styles.
-- Keep requested permissions minimal. Don't add `tabs`, because `activeTab` plus the per-domain host permissions already cover it.
+- **`chrome.permissions.request` must run synchronously inside the click or submit handler.** Any `await` before it loses the user gesture and Chrome rejects the request. That's why parsing and `planAdd` are synchronous. See `addEntry` in `popup.js`.
+- **Never lose access to a listed site.** `pruneGrants` skips any grant that overlaps a listed entry, because Chrome doesn't document how revoking overlapping patterns behaves.
+- **Popup element IDs and classes are a contract** with the design:
+  - IDs: `current-host`, `current-status`, `current-btn`, `sites`, `add`, `domain`, `subdomains`, `error`, `notice`, `interval`.
+  - Classes set by the script: `on`, `primary`, `muted`.
+  - Classes used only by CSS: `wild`, `scope-all`, `scope-exact`.
+- **Light and dark mode are both required.** Colours are custom properties on `:root`, overridden under `prefers-color-scheme: dark`, and `color-scheme: light dark` keeps native controls themed. All text needs WCAG AA contrast (4.5:1) in both themes. The only change from the design's tokens is `--placeholder`, adjusted for exactly this reason. The header logo and the toolbar icon also switch with the theme.
+- Keep requested permissions minimal. Don't add `tabs`, because `activeTab` plus the per-entry host permissions already cover it.
+
+## GUI and design
+
+`design/` holds the Claude Design handoff and is the reference for all GUI work:
+- `design/reference/Idly Mockups.dc.html` has every popup state in light and dark. Open it in a browser (it loads `support.js` and React from unpkg). Those states are the acceptance checklist for the popup.
+- `design/README.md` is the handoff spec (layout, tokens, copy, behaviour).
+- `design/popup.html` is the popup exactly as delivered. The shipped `popup.html` differs only in the placeholder contrast and the theme-switching header logo.
+- `design/icons/` holds the icon sources (SVG and PNG, options a/b/c and mono).
+
+Nothing in `design/` ships or is loaded by the extension. Popups can't have rounded outer corners: the browser draws the popup frame, and the rounded card in the mockups is only presentation.
 
 ## Adding support for a site
 
@@ -46,8 +83,9 @@ When a site's warning dialog isn't dismissed, get its exact text and button labe
 
 ## Verifying changes
 
-There is no test suite. To verify:
-- Syntax: `node --check content.js`, and for each module `node --check --input-type=module < file.js`.
-- Content-script logic: serve a mock page (from a scratch directory, not this repo) that stubs `window.chrome.runtime.onMessage` and loads `content.js`. Add a session-warning dialog, including one inside a shadow root, plus a decoy payment dialog with a "Continue" button. Fire a nudge and assert that only the session dialog's continue button was clicked.
-- The full extension needs a manual pass: reload it in `chrome://extensions`, add a domain, check the **ON** badge, and read the `[Idly]` logs in the page console.
+- **Unit tests:** `node --test`, with no dependencies. Add a test for every rule you change in `shared.js`.
+- **Syntax:** `node --check content.js`, and for each module `node --check --input-type=module < file.js`.
+- **Popup:** from a scratch directory, not this repo, serve a copy of `popup.html` with `window.chrome` stubbed (storage, `tabs.query`, `permissions.request`). Load each mockup state and screenshot it in both light and dark (for example with Playwright's `emulateMedia`), then compare against `Idly Mockups`.
+- **Content script:** serve a mock page that stubs `window.chrome.runtime.onMessage` and loads `content.js`. Include a session-warning dialog (one inside a shadow root) and a decoy payment dialog with a "Continue" button. Fire a nudge and assert that only the session dialog's button was clicked.
+- **Full extension:** a manual pass. Reload it in `chrome://extensions`, add an entry, check the **ON** badge, switch the browser between light and dark to watch the toolbar icon, and read the `[Idly]` logs in the page console.
 - Don't leave test pages or `.playwright-mcp/` output in the repo.

@@ -11,7 +11,7 @@
   --field: #ffffff;
   --fg: #1d1c1a;
   --muted: #64605a;
-  --placeholder: #75716a; /* design: #8a867f, darkened for 4.5:1 */
+  --placeholder: #8a867f;
   --border: #e3e0da;
   --border-strong: #cdc9c1;
   --hover: #ebe8e3;
@@ -30,7 +30,7 @@
     --field: #17181a;
     --fg: #ecebe8;
     --muted: #a3a19c;
-    --placeholder: #858380; /* design: #7f7d79, lightened for 4.5:1 */
+    --placeholder: #7f7d79;
     --border: #313235;
     --border-strong: #47494d;
     --hover: #2c2d31;
@@ -59,12 +59,6 @@ button { cursor: pointer; }
 
 header { display: flex; align-items: center; gap: 8px; padding: 14px 16px 12px; }
 header svg { width: 20px; height: 20px; flex: none; }
-/* Icon option b (deep green) in light mode, option c (pale green) in dark,
-   matching the toolbar icon that background.js swaps. */
-.logo-tile { fill: #14543a; } .logo-eye { stroke: #f4f1ea; } .logo-pupil { fill: #8fe3b0; }
-@media (prefers-color-scheme: dark) {
-  .logo-tile { fill: #e3f1e8; } .logo-eye { stroke: #1f8a4c; } .logo-pupil { fill: #1f8a4c; }
-}
 header h1 { margin: 0; font-size: 14px; font-weight: 600; }
 
 .label {
@@ -175,9 +169,9 @@ footer label { font-size: 12px; color: var(--muted); }
 <body>
 <header>
   <svg viewBox="0 0 128 128" aria-hidden="true">
-    <rect class="logo-tile" width="128" height="128" rx="28"/>
-    <path d="M18 64 Q64 16 110 64 Q64 112 18 64 Z" fill="none" class="logo-eye" stroke-width="9" stroke-linejoin="round"/>
-    <circle class="logo-pupil" cx="64" cy="64" r="15"/>
+    <rect width="128" height="128" rx="28" fill="#23282b"/>
+    <path d="M18 64 Q64 16 110 64 Q64 112 18 64 Z" fill="none" stroke="#f4f1ea" stroke-width="9" stroke-linejoin="round"/>
+    <circle cx="64" cy="64" r="15" fill="#f4f1ea"/>
   </svg>
   <h1>Idly</h1>
 </header>

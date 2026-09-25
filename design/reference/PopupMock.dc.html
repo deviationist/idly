@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet><style>@keyframes idlyBreathe{0%,100%{opacity:.4;transform:scale(.8)}50%{opacity:1;transform:scale(1)}}</style></helmet>
+<div style="width:340px;background:var(--bg);color:var(--fg);font:13px/1.4 system-ui,-apple-system,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;border-radius:8px;box-shadow:0 0 0 1px var(--frame),0 8px 28px rgba(0,0,0,.14);overflow:hidden;-webkit-font-smoothing:antialiased">
+  <div style="display:flex;align-items:center;gap:8px;padding:14px 16px 12px">
+    <img src="../icons/svg/mono-128.svg" alt="" style="width:20px;height:20px;display:block">
+    <div style="font-size:14px;font-weight:600">Idly</div>
+  </div>
+  <div style="margin:0 12px;padding:14px;background:var(--surface);border:1px solid var(--border);border-radius:10px">
+    <div style="margin:0 0 6px;font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)">This page</div>
+    <div style="font-size:15px;font-weight:600;overflow-wrap:anywhere">{{ host }}</div>
+    <sc-if value="{{ on }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;align-items:center;gap:7px;margin-top:4px;font-size:12.5px;color:var(--on)">{{ dot }}<span>{{ status }}</span></div>
+    </sc-if>
+    <sc-if value="{{ offStatus }}" hint-placeholder-val="{{ true }}">
+      <div style="margin-top:4px;font-size:12.5px;color:var(--muted)">{{ status }}</div>
+    </sc-if>
+    <sc-if value="{{ primary }}" hint-placeholder-val="{{ true }}">
+      <button type="button" style="width:100%;height:36px;margin-top:12px;border:1px solid var(--ink);border-radius:8px;background:var(--ink);color:var(--on-ink);font:inherit;font-weight:500;cursor:pointer" style-hover="background:var(--ink-hover)">{{ btn }}</button>
+    </sc-if>
+    <sc-if value="{{ secondary }}" hint-placeholder-val="{{ false }}">
+      <button type="button" style="width:100%;height:36px;margin-top:12px;border:1px solid var(--border-strong);border-radius:8px;background:var(--bg);color:var(--fg);font:inherit;font-weight:500;cursor:pointer" style-hover="background:var(--hover)">{{ btn }}</button>
+    </sc-if>
+  </div>
+  <div style="padding:18px 16px 0">
+    <div style="margin:0 0 6px;font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)">Active websites</div>
+    <div style="max-height:222px;overflow-y:auto;border-bottom:1px solid var(--border)">
+      <sc-for list="{{ sites }}" as="s" hint-placeholder-count="3">
+        <div style="display:flex;align-items:center;gap:8px;min-height:36px;padding:0 2px;border-top:1px solid var(--border)">
+          <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ s }}</span>
+          <button type="button" style="flex:none;padding:4px 6px;border:0;border-radius:5px;background:none;color:var(--muted);font:inherit;font-size:12px;cursor:pointer" style-hover="background:var(--hover);color:var(--fg)">Remove</button>
+        </div>
+      </sc-for>
+      <sc-if value="{{ noSites }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;align-items:center;min-height:36px;padding:0 2px;border-top:1px solid var(--border);color:var(--muted)">No websites yet.</div>
+      </sc-if>
+    </div>
+    <div style="display:flex;align-items:center;gap:6px;margin-top:10px">
+      <div style="box-sizing:border-box;flex:1;min-width:0;display:flex;align-items:center;height:32px;border:1px solid var(--border-strong);border-radius:7px;background:var(--field)">
+        <sc-if value="{{ showWild }}" hint-placeholder-val="{{ false }}"><span style="padding-left:10px;color:var(--muted);font-family:ui-monospace,Menlo,monospace;font-size:12.5px">*.</span></sc-if>
+        <input type="text" defaultValue="{{ draft }}" placeholder="Add a website, e.g. bank.com" style="flex:1;min-width:0;height:100%;padding:0 10px 0 {{ inputPad }};border:0;background:none;color:var(--fg);font:inherit;outline:none">
+      </div>
+      <button type="button" style="box-sizing:border-box;flex:none;height:32px;padding:0 14px;border:1px solid var(--border-strong);border-radius:7px;background:var(--bg);color:var(--fg);font:inherit;font-weight:500;cursor:pointer" style-hover="background:var(--hover)">Add</button>
+    </div>
+    <sc-if value="{{ hasError }}" hint-placeholder-val="{{ false }}">
+      <div style="margin-top:6px;font-size:12px;color:var(--err)">{{ error }}</div>
+    </sc-if>
+    <sc-if value="{{ hasNotice }}" hint-placeholder-val="{{ false }}">
+      <div style="margin-top:6px;font-size:12px;color:var(--muted)">{{ notice }}</div>
+    </sc-if>
+    <label style="display:flex;align-items:center;gap:7px;margin-top:10px;font-size:12px;cursor:pointer">
+      <input type="checkbox" checked="{{ sub }}" readOnly="{{ true }}" style="margin:0;width:14px;height:14px;accent-color:var(--dot)">
+      <span>Include subdomains</span>
+    </label>
+    <sc-if value="{{ sub }}" hint-placeholder-val="{{ true }}">
+      <div style="margin-top:4px;font-size:11.5px;color:var(--muted)">Also covers its subdomains, such as www. and auth.</div>
+    </sc-if>
+    <sc-if value="{{ exact }}" hint-placeholder-val="{{ false }}">
+      <div style="margin-top:4px;font-size:11.5px;color:var(--muted)">Covers only the exact website you type.</div>
+    </sc-if>
+  </div>
+  <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:16px;padding:10px 16px 12px;border-top:1px solid var(--border)">
+    <div style="font-size:12px;color:var(--muted)">Nudge every (minutes)</div>
+    <input type="number" min="0.5" step="0.5" defaultValue="1" style="width:64px;height:26px;padding:0 6px;border:1px solid var(--border);border-radius:6px;background:var(--field);color:var(--fg);font:inherit;font-size:12px;text-align:right">
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:360,&quot;height&quot;:520}}">
+class Component extends DCLogic {
+  renderVals() {
+    const p = this.props;
+    const sites = p.sites ?? [];
+    const rm = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const on = !!p.on, unsupported = !!p.unsupported;
+    return {
+      host: p.host ?? 'netbank.example.com',
+      status: p.status ?? '',
+      on, offStatus: !on && !!p.status,
+      btn: p.btn ?? '',
+      primary: !!p.primary && !unsupported,
+      secondary: !p.primary && !unsupported,
+      sites, noSites: sites.length === 0,
+      error: p.error ?? '', hasError: !!p.error,
+      draft: p.draft ?? '',
+      notice: p.notice ?? '', hasNotice: !!p.notice,
+      sub: p.sub !== false, exact: p.sub === false,
+      showWild: p.sub !== false && !!p.draft,
+      inputPad: p.sub !== false && p.draft ? '1px' : '10px',
+      dot: React.createElement('span', { style: { width: 7, height: 7, borderRadius: '50%', background: 'var(--dot)', flex: 'none', animation: rm ? 'none' : 'idlyBreathe 2.8s ease-in-out infinite' } })
+    };
+  }
+}
+</script>
+</body>
+</html>

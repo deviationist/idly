@@ -1,6 +1,6 @@
 # Idly
 
-A Chromium extension (Manifest V3, vanilla JS, no build step) that stops chosen sites from logging you out for inactivity.
+A Chromium extension (Manifest V3, vanilla JS, no build step) that stops chosen sites from logging you out for inactivity. It works in Chrome, Brave, Edge and other Chromium browsers.
 
 ## Install
 
@@ -10,7 +10,11 @@ A Chromium extension (Manifest V3, vanilla JS, no build step) that stops chosen 
 
 ## How it works
 
-Add a site either as an exact host (`example.com`, which covers that host only) or as a wildcard (`*.example.com`, which covers example.com and every subdomain, such as `www.` and `auth.`). **Keep me logged in** adds the current tab's exact host.
+There are two ways to add a website:
+- **Keep me logged in** on the site you're on adds its exact address.
+- The **Add a website** form accepts a domain or a pasted URL. With **Include subdomains** ticked (the default), `bank.com` is saved as `*.bank.com`, which covers bank.com and all its subdomains, such as `www.` and `auth.`. Unticked, it covers only the exact address you typed.
+
+Idly refuses addresses without a TLD, IP addresses and duplicates. If a wildcard already covers an address, it tells you. A new wildcard replaces the narrower entries it covers.
 
 On each enabled site, Idly does the following:
 
@@ -22,14 +26,19 @@ On each enabled site, Idly does the following:
 
 - Idly can't get past a **server-side absolute session limit**, for example a forced re-login after a fixed number of hours whatever you do.
 - Some sites ignore synthetic events. On those, only the dialog auto-click helps.
-- After you remove a domain, reload any open tabs on it to fully stop Idly there.
+- After you remove a website, reload any open tabs on it to fully stop Idly there.
+- The popup's outer corners are drawn by the browser, so they may be square (as in Brave) even though the design shows them rounded.
 
 ## Files
 
 | File | Role |
 |---|---|
-| `manifest.json` | MV3 manifest; host access is requested per domain at runtime |
-| `background.js` | Registers the content script for enabled domains, runs the alarm tick, sets the badge |
+| `manifest.json` | MV3 manifest; host access is requested per website at runtime |
+| `background.js` | Registers the content script, runs the alarm tick, sets the badge and the theme-matched toolbar icon, revokes unused permissions |
+| `offscreen.html` / `offscreen.js` | Tells the service worker whether the browser is in light or dark mode |
 | `content.js` | Simulates activity and dismisses session warnings |
-| `popup.html` / `popup.js` | GUI: this-page toggle, domain list, interval setting |
-| `shared.js` | Defaults, domain → match-pattern helpers |
+| `popup.html` / `popup.js` | The popup GUI |
+| `shared.js` | Address parsing, validation and the duplicate/overlap rules |
+| `icons/` | Toolbar icons for light and dark toolbars |
+| `design/` | The Claude Design handoff: mockups of every state, spec, icon sources |
+| `test/` | Unit tests: run `node --test` |

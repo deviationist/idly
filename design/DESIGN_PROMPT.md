@@ -1,4 +1,4 @@
-# Claude Design prompt: Idly popup and icon
+# Claude Design prompt: Idly popup and icon (latest version; the handoff in this folder was built from `reference/DESIGN_PROMPT.md` plus follow-up instructions)
 
 Paste everything below the line into Claude Design.
 
