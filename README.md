@@ -22,6 +22,10 @@ On each enabled site, Idly does the following:
 - **Session-warning dismissal:** a `MutationObserver` watches for dialogs, including ones inside shadow DOM. A dialog only counts if its text mentions logout, session or inactivity. Idly then clicks its "Continue / Fortsett / Fortsätt / Jatka…" button. Buttons outside such dialogs are never clicked, so a "Continue" on a payment screen is left alone.
 - **No tab discarding:** tabs on enabled domains are marked non-discardable, so Chrome's Memory Saver doesn't put the bank tab to sleep while you work in other tabs.
 
+## Where the list lives
+
+Idly doesn't keep its own list of websites. The list is the set of sites you've granted Idly access to, so the popup and the browser's extension settings (**Site access**) always agree. Remove a site in either place and it's gone from both. The list stays on this browser and doesn't sync to your other devices. The nudge interval does sync.
+
 ## Limits
 
 - Idly can't get past a **server-side absolute session limit**, for example a forced re-login after a fixed number of hours whatever you do.

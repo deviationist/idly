@@ -3,6 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   parseInput, planAdd, covers, patternFor, stripWww, hasWildcardPrefix, clampInterval, MESSAGES,
+  entryFromOrigin, entriesFromOrigins,
 } from "../shared.js";
 
 test("parseInput cleans hosts out of URLs", () => {
@@ -98,4 +99,23 @@ test("clampInterval keeps the nudge interval sane", () => {
   assert.equal(clampInterval(999), 60);
   assert.equal(clampInterval("abc"), 1);
   assert.equal(clampInterval(""), 0.5);
+});
+
+test("entryFromOrigin maps granted patterns to entries", () => {
+  assert.equal(entryFromOrigin("*://*.bank.com/*"), "*.bank.com");
+  assert.equal(entryFromOrigin("*://bank.com/*"), "bank.com");
+  assert.equal(entryFromOrigin("https://www.bank.com/*"), "www.bank.com");
+  for (const o of ["*://*/*", "<all_urls>", "https://*/*", "*://localhost/*", "*://192.168.1.1/*", "file:///*"])
+    assert.equal(entryFromOrigin(o), null, o);
+});
+
+test("entriesFromOrigins groups, filters and sorts", () => {
+  assert.deepEqual(
+    entriesFromOrigins(["https://www.x.org/*", "*://*/*", "*://*.bank.com/*", "http://www.x.org/*", "*://a.org/*"]),
+    [
+      { entry: "a.org", origins: ["*://a.org/*"] },
+      { entry: "*.bank.com", origins: ["*://*.bank.com/*"] },
+      { entry: "www.x.org", origins: ["https://www.x.org/*", "http://www.x.org/*"] },
+    ],
+  );
 });

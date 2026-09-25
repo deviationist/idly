@@ -15,8 +15,8 @@ Idly is a Chromium extension that keeps chosen sites (online banking, say) from 
 | File | Role |
 |---|---|
 | `manifest.json` | Permissions: `storage`, `alarms`, `scripting`, `activeTab`, `offscreen`. Host access is an **optional** `*://*/*`, granted per entry at runtime |
-| `shared.js` | Pure site-entry logic with no browser APIs: `parseInput` (cleaning and validation), `planAdd` (duplicate and overlap rules), `covers`, `patternFor`, `stripWww`, `clampInterval`, and the user-facing `MESSAGES` |
-| `background.js` | Service worker. Re-syncs whenever `chrome.storage.sync` changes: `pruneGrants` revokes unneeded host permissions, it registers `content.js` dynamically, recreates the alarm and injects into open tabs, then `refreshTabs` sets the badge and `autoDiscardable: false` on enabled tabs (Memory Saver would otherwise discard a background bank tab, which silences Idly and reloads the tab into a login page). Each alarm tick sends `{type: "idly:nudge"}` to matching tabs. It also swaps the toolbar icon on `{type: "idly:scheme"}` |
+| `shared.js` | Pure site-entry logic with no browser APIs: `parseInput` (cleaning and validation), `planAdd` (duplicate and overlap rules), `entriesFromOrigins` (granted permissions to list entries), `covers`, `patternFor`, `stripWww`, `clampInterval`, and the user-facing `MESSAGES` |
+| `background.js` | Service worker. Re-syncs whenever host permissions are added or removed (`chrome.permissions.onAdded` / `onRemoved`, serialised through a queue): it registers `content.js` dynamically, recreates the alarm and injects into open tabs, then `refreshTabs` sets the badge and `autoDiscardable: false` on enabled tabs (Memory Saver would otherwise discard a background bank tab, which silences Idly and reloads the tab into a login page). Each alarm tick sends `{type: "idly:nudge"}` to matching tabs. On `onAdded`, `replaceCovered` revokes the entries a new wildcard covers. It also swaps the toolbar icon on `{type: "idly:scheme"}` |
 | `offscreen.html` / `offscreen.js` | Hidden offscreen document (reason `MATCH_MEDIA`). Service workers have no `matchMedia`, so this page reports light or dark to `background.js` |
 | `content.js` | On a nudge: dismisses session-warning dialogs, then dispatches synthetic mouse, pointer, Shift and scroll events. A `MutationObserver` also dismisses dialogs as soon as they appear. Guarded by `window.__idly` because it can be injected twice |
 | `popup.html` / `popup.js` | GUI: the This page card, the list of active websites, the add form, the nudge interval |
@@ -24,7 +24,12 @@ Idly is a Chromium extension that keeps chosen sites (online banking, say) from 
 | `design/` | The Claude Design handoff. See "GUI and design" |
 | `test/shared.test.mjs` | Unit tests for `shared.js` |
 
-**State** lives in `chrome.storage.sync` as `{ sites: string[], intervalMin: number }`. The popup writes storage and the background reacts, so the popup never talks to the background directly.
+**State:** the list of websites is **the browser's granted host permissions** (`chrome.permissions.getAll()`, mapped by `entriesFromOrigins`). There's no copy in storage, so the browser's permissions are the only source of truth:
+- Allowing the permission prompt is what adds a website.
+- Revoking it, in the popup or in the browser's extension settings, is what removes one.
+- Grants that aren't a single website, such as `*://*/*` from "On all sites", are ignored.
+
+`chrome.storage.sync` holds only `{ intervalMin }`. The popup and the background never message each other: both react to permission and storage events.
 
 **Site entries** come in two forms:
 - `example.com` is an **exact host**. It maps to `*://example.com/*`, and `www.example.com` is not included.
@@ -56,7 +61,8 @@ Idly is a Chromium extension that keeps chosen sites (online banking, say) from 
 - **Never click logout.** `CONTINUE_TEXT` is anchored (`^`) to the start of the label. Check that new words can't match logout or cancel labels.
 - **Synthetic keys must be inert.** Only a lone Shift is dispatched. Don't add keys that could type text, submit forms or trigger shortcuts.
 - **`chrome.permissions.request` must run synchronously inside the click or submit handler.** Any `await` before it loses the user gesture and Chrome rejects the request. That's why parsing and `planAdd` are synchronous. See `addEntry` in `popup.js`.
-- **Never lose access to a listed site.** `pruneGrants` skips any grant that overlaps a listed entry, because Chrome doesn't document how revoking overlapping patterns behaves.
+- **Never rely on code after `chrome.permissions.request` in the popup.** The popup usually closes while the browser shows its prompt, which kills its script. Anything that has to happen after a grant (such as replacing covered entries) belongs in `background.js` under `permissions.onAdded`. Keeping our own copy of the list is what caused the "granted but not listed" bug in 0.1.
+- **Never lose access to a listed site.** Chrome doesn't document how revoking a narrow pattern interacts with a broader grant, so `replaceCovered` checks that the wildcard is still granted afterwards and logs an error if it isn't.
 - **Popup element IDs and classes are a contract** with the design:
   - IDs: `current-host`, `current-status`, `current-btn`, `sites`, `add`, `domain`, `subdomains`, `error`, `notice`, `interval`.
   - Classes set by the script: `on`, `primary`, `muted`.

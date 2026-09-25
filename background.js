@@ -1,9 +1,10 @@
 // Idly service worker.
-// Owns the list of enabled domains, keeps content scripts registered for them,
-// and drives a chrome.alarms tick. Alarms keep firing for background tabs,
-// where the page's own setInterval would be throttled to about once a minute or less.
+// The list of websites is the browser's granted host permissions (see shared.js).
+// This worker keeps content scripts registered for them and drives a
+// chrome.alarms tick. Alarms keep firing for background tabs, where the page's
+// own setInterval would be throttled to about once a minute or less.
 
-import { DEFAULTS, patternFor, covers, baseOf } from "./shared.js";
+import { DEFAULTS, entriesFromOrigins, entryFromOrigin, patternFor, covers, baseOf, isWildcard } from "./shared.js";
 
 const SCRIPT_ID = "idly-content";
 const ALARM = "idly-tick";
@@ -12,15 +13,22 @@ async function getSettings() {
   return { ...DEFAULTS, ...(await chrome.storage.sync.get(DEFAULTS)) };
 }
 
+async function getSites() {
+  const { origins = [] } = await chrome.permissions.getAll();
+  return entriesFromOrigins(origins);
+}
+
+const matchPatterns = (sites) => sites.flatMap((s) => s.origins);
+
 async function syncRegistration() {
-  const { sites } = await getSettings();
+  const patterns = matchPatterns(await getSites());
   const existing = await chrome.scripting.getRegisteredContentScripts({ ids: [SCRIPT_ID] });
   if (existing.length) await chrome.scripting.unregisterContentScripts({ ids: [SCRIPT_ID] });
-  if (!sites.length) return;
+  if (!patterns.length) return;
   await chrome.scripting.registerContentScripts([{
     id: SCRIPT_ID,
     js: ["content.js"],
-    matches: sites.map(patternFor),
+    matches: patterns,
     runAt: "document_idle",
     allFrames: true,
     persistAcrossSessions: true,
@@ -35,9 +43,9 @@ async function syncAlarm() {
 }
 
 async function enabledTabs() {
-  const { sites } = await getSettings();
-  if (!sites.length) return [];
-  return chrome.tabs.query({ url: sites.map(patternFor) });
+  const patterns = matchPatterns(await getSites());
+  if (!patterns.length) return [];
+  return chrome.tabs.query({ url: patterns });
 }
 
 // Badges enabled tabs and stops Chrome's Memory Saver from discarding them.
@@ -65,29 +73,37 @@ async function injectExisting() {
   }
 }
 
-// Revokes host permissions that no entry needs any more, e.g. after a removal or
-// after a wildcard replaced exact entries. A grant that overlaps a listed entry
-// (either one covers the other) is left for later: how Chrome revokes overlapping
-// patterns isn't documented, and we must never lose access to a listed site.
-async function pruneGrants() {
-  const { sites } = await getSettings();
-  const wanted = new Set(sites.map(patternFor));
-  const overlaps = (a, b) => covers(a, baseOf(b)) || covers(b, baseOf(a));
-  const { origins = [] } = await chrome.permissions.getAll();
-  const stale = origins.filter((o) => {
-    if (wanted.has(o)) return false;
-    const entry = o.match(/^\*:\/\/(.+)\/\*$/)?.[1];
-    return !(entry && sites.some((s) => overlaps(s, entry)));
-  });
-  if (stale.length) await chrome.permissions.remove({ origins: stale }).catch(() => {});
+// A newly granted wildcard replaces the entries it covers ("*.bank.com" makes
+// "bank.com" and "auth.bank.com" redundant). This runs here rather than in the
+// popup because the popup usually closes while the browser shows its
+// permission prompt.
+async function replaceCovered(addedOrigins) {
+  const wildcards = addedOrigins.map(entryFromOrigin).filter((e) => e && isWildcard(e));
+  if (!wildcards.length) return;
+  const covered = (await getSites()).filter((s) =>
+    wildcards.some((w) => w !== s.entry && covers(w, baseOf(s.entry))));
+  if (!covered.length) return;
+  await chrome.permissions.remove({ origins: matchPatterns(covered) });
+  // Chrome doesn't document how revoking a narrow pattern interacts with a broader
+  // grant, so check that the wildcard survived.
+  for (const w of wildcards) {
+    if (!(await chrome.permissions.contains({ origins: [patternFor(w)] }))) {
+      console.error(`[Idly] Revoking entries covered by ${w} also revoked ${w}. Add it again.`);
+    }
+  }
 }
 
-async function resync() {
-  await pruneGrants();
-  await syncRegistration();
-  await syncAlarm();
-  await injectExisting();
-  await refreshTabs();
+// Runs one resync at a time: permission events can arrive in bursts, and
+// overlapping unregister/register calls would fail with a duplicate script ID.
+let queue = Promise.resolve();
+function resync() {
+  queue = queue.then(async () => {
+    await syncRegistration();
+    await syncAlarm();
+    await injectExisting();
+    await refreshTabs();
+  }).catch((e) => console.error("[Idly] resync failed:", e));
+  return queue;
 }
 
 // Toolbar icon per theme: deep green on light toolbars, pale green on dark ones.
@@ -111,11 +127,22 @@ async function startup() {
   await resync();
 }
 
-chrome.runtime.onInstalled.addListener(startup);
+chrome.runtime.onInstalled.addListener(async () => {
+  // Versions before 0.2 kept their own list in storage. The browser's granted
+  // permissions are the list now, so drop the old copy.
+  await chrome.storage.sync.remove("sites");
+  await startup();
+});
 chrome.runtime.onStartup.addListener(startup);
 
+chrome.permissions.onAdded.addListener(async ({ origins = [] }) => {
+  await replaceCovered(origins).catch((e) => console.error("[Idly] replace failed:", e));
+  resync();
+});
+chrome.permissions.onRemoved.addListener(() => resync());
+
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "sync" && (changes.sites || changes.intervalMin)) resync();
+  if (area === "sync" && changes.intervalMin) syncAlarm();
 });
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {

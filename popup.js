@@ -1,21 +1,28 @@
 import {
-  DEFAULTS, MESSAGES, patternFor, covers, baseOf,
+  DEFAULTS, MESSAGES, patternFor, covers, baseOf, entriesFromOrigins,
   parseInput, planAdd, stripWww, hasWildcardPrefix, clampInterval,
 } from "./shared.js";
 
 const $ = (id) => document.getElementById(id);
 const field = $("domain");
 const subdomains = $("subdomains");
-let sites = [];
+let sites = []; // [{ entry, origins }] from the browser's granted permissions
 let currentHost = null;
 
+const entries = () => sites.map((s) => s.entry);
+
 // The listed entry that covers host, preferring an exact match over a wildcard.
-const coveringEntry = (host) => sites.find((s) => s === host) ?? sites.find((s) => covers(s, host));
+const coveringEntry = (host) => entries().find((e) => e === host) ?? entries().find((e) => covers(e, host));
+
+async function loadSites() {
+  const { origins = [] } = await chrome.permissions.getAll();
+  sites = entriesFromOrigins(origins);
+}
 
 async function load() {
   const settings = await chrome.storage.sync.get(DEFAULTS);
-  sites = settings.sites;
   $("interval").value = settings.intervalMin;
+  await loadSites();
 
   // activeTab exposes the URL of the tab the popup was opened from.
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -55,7 +62,7 @@ function renderCurrent() {
     status.textContent = "Not active";
     btn.textContent = "Keep me logged in";
     btn.className = "primary";
-    btn.onclick = () => addEntry(planAdd(sites, currentHost, false));
+    btn.onclick = () => addEntry(planAdd(entries(), currentHost, false));
   }
 }
 
@@ -68,7 +75,7 @@ function renderList() {
     li.textContent = "No websites yet.";
     list.append(li);
   }
-  for (const entry of sites) {
+  for (const { entry } of sites) {
     const li = document.createElement("li");
     const span = document.createElement("span");
     span.textContent = entry;
@@ -123,42 +130,43 @@ $("add").onsubmit = (e) => {
     field.focus();
     return;
   }
-  addEntry(planAdd(sites, parsed.host, parsed.wildcard || subdomains.checked), { fromForm: true });
+  addEntry(planAdd(entries(), parsed.host, parsed.wildcard || subdomains.checked), { fromForm: true });
 };
 
+// Granting the permission is what adds the website: there's nothing else to save.
+// That matters because the popup usually closes while the browser shows its prompt,
+// so nothing after the request can be relied on to run. background.js removes
+// entries a new wildcard replaces.
 // Must be called straight from a click or submit handler: chrome.permissions.request
 // needs the user gesture, so it runs before any await.
 function addEntry(plan, { fromForm = false } = {}) {
   if (plan.error) return feedback({ error: plan.error });
   chrome.permissions.request({ origins: [patternFor(plan.entry)] }).then(async (granted) => {
     if (!granted) return feedback({ error: MESSAGES.declined });
-    try {
-      // background.js drops host permissions that no entry needs any more.
-      await chrome.storage.sync.set({ sites: plan.sites });
-    } catch {
-      return feedback({ error: MESSAGES.saveFailed });
-    }
-    sites = plan.sites;
     feedback({ notice: plan.replaced.length ? MESSAGES.replaced(plan.replaced, plan.entry) : "" });
     if (fromForm) {
       field.value = "";
       subdomains.checked = true;
     }
-    render();
   }, () => feedback({ error: MESSAGES.declined }));
 }
 
 async function removeSite(entry) {
-  const next = sites.filter((s) => s !== entry);
-  try {
-    await chrome.storage.sync.set({ sites: next });
-  } catch {
-    return feedback({ error: MESSAGES.saveFailed });
-  }
-  sites = next;
+  const site = sites.find((s) => s.entry === entry);
+  if (!site) return;
+  const removed = await chrome.permissions.remove({ origins: site.origins }).catch(() => false);
+  if (!removed) return feedback({ error: MESSAGES.removeFailed });
   feedback();
+}
+
+// Re-render whenever the browser's grants change: after a prompt, after a removal,
+// or when the user changes site access in the browser's extension settings.
+async function refresh() {
+  await loadSites();
   render();
 }
+chrome.permissions.onAdded.addListener(refresh);
+chrome.permissions.onRemoved.addListener(refresh);
 
 $("interval").onchange = async (e) => {
   const v = clampInterval(e.target.value);

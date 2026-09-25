@@ -1,7 +1,11 @@
 // Site-entry logic shared by the popup and the service worker. Nothing here
 // touches browser APIs, so test/shared.test.mjs can run it under plain Node.
+//
+// The list of websites isn't stored by Idly: it's the set of host permissions
+// the browser has granted (chrome.permissions.getAll). Allowing the permission
+// prompt is what adds a website, and revoking it in the browser removes it.
 
-export const DEFAULTS = { sites: [], intervalMin: 1 };
+export const DEFAULTS = { intervalMin: 1 };
 export const INTERVAL = { min: 0.5, max: 60, step: 0.5 };
 
 export const MESSAGES = {
@@ -12,6 +16,7 @@ export const MESSAGES = {
   replaced: (hosts, entry) => `Replaced ${listJoin(hosts)} with ${entry}.`,
   declined: "Permission was declined.",
   saveFailed: "Couldn't save. Try again.",
+  removeFailed: "Couldn't remove it. Try again, or remove it in the browser's extension settings.",
 };
 
 // A site entry is either an exact host ("bank.com") or a wildcard ("*.bank.com"),
@@ -80,6 +85,32 @@ export function planAdd(sites, host, wildcard) {
 
   const replaced = wildcard ? sites.filter((s) => covers(entry, baseOf(s))) : [];
   return { entry, replaced, sites: [...sites.filter((s) => !replaced.includes(s)), entry] };
+}
+
+// Maps a granted host-permission pattern back to a site entry:
+// "*://*.bank.com/*" → "*.bank.com", "https://www.bank.com/*" → "www.bank.com".
+// Returns null for patterns that aren't a single website, such as "*://*/*" or
+// "<all_urls>" from the browser's "On all sites" setting.
+export function entryFromOrigin(origin) {
+  const host = /^(?:\*|https?):\/\/([^/]+)\/\*?$/.exec(origin)?.[1];
+  if (!host || host === "*") return null;
+  const parsed = parseInput(host);
+  if (parsed.error) return null;
+  return parsed.wildcard ? `*.${parsed.host}` : parsed.host;
+}
+
+// Groups granted patterns into the popup's list: [{ entry, origins }], sorted by
+// domain. One entry can have several patterns (the browser may grant http and
+// https separately), and all of them are revoked when it's removed.
+export function entriesFromOrigins(origins) {
+  const byEntry = new Map();
+  for (const origin of origins) {
+    const entry = entryFromOrigin(origin);
+    if (entry) byEntry.set(entry, [...(byEntry.get(entry) ?? []), origin]);
+  }
+  return [...byEntry]
+    .map(([entry, origins]) => ({ entry, origins }))
+    .sort((a, b) => baseOf(a.entry).localeCompare(baseOf(b.entry)) || b.entry.localeCompare(a.entry));
 }
 
 // Clamps the nudge interval to a sane range on the 0.5-minute grid.
