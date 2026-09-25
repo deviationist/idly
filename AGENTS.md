@@ -72,7 +72,7 @@ Idly is a Chromium extension that keeps chosen sites (online banking, say) from 
 - `design/popup.html` is the popup exactly as delivered. The shipped `popup.html` differs only in the placeholder contrast and the theme-switching header logo.
 - `design/icons/` holds the icon sources (SVG and PNG, options a/b/c and mono).
 
-Nothing in `design/` ships or is loaded by the extension. Popups can't have rounded outer corners: the browser draws the popup frame, and the rounded card in the mockups is only presentation.
+Nothing in `design/` ships or is loaded by the extension. Square popup corners are accepted. The browser draws the popup frame, and a transparent page background doesn't help (tested: the browser paints an opaque background behind it). The rounded card in the mockups is only presentation. The only known workaround is a fake popup injected into the web page with a content script, and it was rejected: it would draw our UI inside bank pages, can't appear on browser pages, and would need broader permissions.
 
 ## Adding support for a site
 
