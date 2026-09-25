@@ -43,14 +43,17 @@ This section is the focus of the popup. It shows the current tab's hostname, a s
 |---|---|---|---|
 | Not active | `netbank.example.com` | "Not active" | Primary: **Keep me logged in** |
 | Active on this domain | `netbank.example.com` | "Staying logged in" (the active style) | Secondary: **Stop keeping me logged in** |
-| Active through a parent domain | `netbank.example.com` | "Staying logged in (via example.com)" | Secondary: **Stop for all of example.com** |
+| Active through a wildcard entry | `netbank.example.com` | "Staying logged in (via *.example.com)" | Secondary: **Stop for all of *.example.com** |
 | Unsupported page (for example `chrome://settings`) | "Idly can't run on this page." | empty | hidden |
 
 ### 3. Active domains
 - A list of domains (such as `example.com` or `bank.example.org`), each with a small **Remove** action. It's usually 1–5 items, but it should handle 20 or more by scrolling.
 - An empty state: "No domains yet."
 - Below the list, an inline form with a text input (placeholder "Add a domain, e.g. example.com") and an **Add** button.
-- A hint: "A domain also covers all of its subdomains."
+- A short help block explaining the two ways to write an entry. Keep both lines, but style them to suit the design:
+  - `example.com`: "Only example.com itself"
+  - `*.example.com`: "example.com and all its subdomains, like www.example.com and auth.example.com"
+- Entries in the list can be either form (`bank.example.org` or `*.example.com`). Make the `*.` wildcard readable at a glance, but keep it as plain text in the list.
 - An inline error line, hidden when empty. Examples: "That doesn't look like a domain.", "Already in the list.", "Permission was declined."
 
 Adding a domain opens Chrome's own permission prompt, which you don't need to design.

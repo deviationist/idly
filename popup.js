@@ -1,11 +1,12 @@
-import { DEFAULTS, patternFor, normalizeDomain } from "./shared.js";
+import { DEFAULTS, patternFor, normalizeDomain, covers } from "./shared.js";
 
 const $ = (id) => document.getElementById(id);
 let sites = [];
 let currentHost = null;
 
-// The listed domain that covers host, e.g. "example.com" covers "netbank.example.com".
-const coveringDomain = (host) => sites.find((d) => host === d || host.endsWith(`.${d}`));
+// The listed entry that covers host, preferring an exact match over a wildcard,
+// e.g. "*.example.com" covers "netbank.example.com".
+const coveringDomain = (host) => sites.find((d) => d === host) ?? sites.find((d) => covers(d, host));
 
 async function load() {
   const settings = await chrome.storage.sync.get(DEFAULTS);

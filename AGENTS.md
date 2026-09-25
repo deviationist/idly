@@ -14,14 +14,18 @@ Idly is a Chromium extension that keeps chosen sites (online banking, say) from 
 | File | Role |
 |---|---|
 | `manifest.json` | Permissions: `storage`, `alarms`, `scripting`, `activeTab`. Host access is an **optional** `*://*/*`, granted per domain at runtime |
-| `shared.js` | `DEFAULTS`, `patternFor(domain)`, `normalizeDomain(input)`. The single source of truth for domain → match pattern |
+| `shared.js` | `DEFAULTS`, `patternFor(entry)`, `covers(entry, host)`, `normalizeDomain(input)`. The single source of truth for site-entry matching |
 | `background.js` | Service worker. Re-syncs everything whenever `chrome.storage.sync` changes: registers `content.js` dynamically, recreates the alarm, injects into tabs that are already open, then `refreshTabs` updates the badge and sets `autoDiscardable: false` on enabled tabs (Memory Saver would otherwise discard a background bank tab, which silences Idly and reloads the tab into a login page). Each alarm tick sends `{type: "idly:nudge"}` to matching tabs |
 | `content.js` | On a nudge: dismisses session-warning dialogs, then dispatches synthetic mouse, pointer, Shift and scroll events. A `MutationObserver` also dismisses dialogs as soon as they appear. Guarded by `window.__idly` because it can be injected twice |
 | `popup.html` / `popup.js` | GUI: the current page toggle, the domain list with add/remove, the nudge interval |
 
-**State** lives in `chrome.storage.sync` as `{ sites: string[], intervalMin: number }`. `sites` holds bare hostnames such as `example.com`. The popup writes storage and the background reacts, so the popup never talks to the background directly.
+**State** lives in `chrome.storage.sync` as `{ sites: string[], intervalMin: number }`. `sites` holds site entries such as `example.com` or `*.example.com` (see below). The popup writes storage and the background reacts, so the popup never talks to the background directly.
 
-**Domains:** `patternFor("example.com")` is `*://*.example.com/*`, which matches the domain itself and every subdomain. `normalizeDomain` strips the scheme, path, port, `www.` and `*.`.
+**Site entries** come in two forms:
+- `example.com` is an **exact host**. It maps to `*://example.com/*`, and `www.example.com` is not included.
+- `*.example.com` is a **wildcard**. It maps to `*://*.example.com/*`, which in Chrome also matches `example.com` itself.
+
+`normalizeDomain` strips the scheme, path and port and keeps a leading `*.`. It deliberately keeps `www.`, because with exact matching `www.example.com` is a different entry. **Keep me logged in** adds the current tab's exact hostname. `covers()` has to agree with Chrome's match-pattern semantics, because the popup uses it to show the "via" status while Chrome uses the pattern to inject the script.
 
 ## Invariants: don't break these
 

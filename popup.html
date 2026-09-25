@@ -28,6 +28,9 @@
     label { display: flex; justify-content: space-between; align-items: center; }
     input[type=number] { width: 64px; }
     .muted { color: var(--muted); }
+    .help { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 8px 0 0; color: var(--muted); font-size: 12px; }
+    .help dd { margin: 0; }
+    .help code { color: var(--fg); }
     .error { color: var(--err); margin-top: 6px; }
     .error:empty { display: none; }
   </style>
@@ -47,8 +50,13 @@
       <input id="domain" placeholder="Add a domain, e.g. example.com" autocomplete="off" spellcheck="false" />
       <button type="submit">Add</button>
     </form>
-    <div class="muted" style="margin-top:6px">A domain also covers all of its subdomains.</div>
     <div class="error" id="error"></div>
+    <dl class="help">
+      <dt><code>example.com</code></dt>
+      <dd>Only example.com itself</dd>
+      <dt><code>*.example.com</code></dt>
+      <dd>example.com and all its subdomains, like www.example.com and auth.example.com</dd>
+    </dl>
   </section>
   <section>
     <label>Nudge every (minutes) <input type="number" id="interval" min="0.5" step="0.5" /></label>

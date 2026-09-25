@@ -10,7 +10,9 @@ A Chromium extension (Manifest V3, vanilla JS, no build step) that stops chosen 
 
 ## How it works
 
-On each enabled domain (subdomains included), Idly does the following:
+Add a site either as an exact host (`example.com`, which covers that host only) or as a wildcard (`*.example.com`, which covers example.com and every subdomain, such as `www.` and `auth.`). **Keep me logged in** adds the current tab's exact host.
+
+On each enabled site, Idly does the following:
 
 - **Simulated activity:** every *N* minutes (1 by default) it sends mouse, pointer and Shift-key events so the page's idle timer keeps resetting. The tick comes from `chrome.alarms`, so it still fires in background tabs where the page's own timers get throttled.
 - **Session-warning dismissal:** a `MutationObserver` watches for dialogs, including ones inside shadow DOM. A dialog only counts if its text mentions logout, session or inactivity. Idly then clicks its "Continue / Fortsett / Fortsätt / Jatka…" button. Buttons outside such dialogs are never clicked, so a "Continue" on a payment screen is left alone.
