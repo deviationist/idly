@@ -18,19 +18,21 @@ Idly refuses addresses without a TLD, IP addresses and duplicates. If a wildcard
 
 On each enabled site, Idly does the following:
 
-- **Simulated activity:** every *N* minutes (1 by default) it sends mouse, pointer and Shift-key events so the page's idle timer keeps resetting. The tick comes from `chrome.alarms`, so it still fires in background tabs where the page's own timers get throttled.
+- **Simulated activity:** every *N* minutes (1 by default) it sends mouse, pointer and Shift-key events so the page's idle timer keeps resetting. Each tab's nudge comes after a random 1–3 second delay, so the timing isn't perfectly regular. The tick comes from `chrome.alarms`, so it still fires in background tabs where the page's own timers get throttled.
 - **Session-warning dismissal:** a `MutationObserver` watches for dialogs, including ones inside shadow DOM. A dialog only counts if its text mentions logout, session or inactivity. Idly then clicks its "Continue / Fortsett / Fortsätt / Jatka…" button. Buttons outside such dialogs are never clicked, so a "Continue" on a payment screen is left alone.
 - **No tab discarding:** tabs on enabled domains are marked non-discardable, so Chrome's Memory Saver doesn't put the bank tab to sleep while you work in other tabs.
 
 ## Where the list lives
 
-Idly doesn't keep its own list of websites. The list is the set of sites you've granted Idly access to, so the popup and the browser's extension settings (**Site access**) always agree. Removing a site in the popup stops Idly there at once, but the browser keeps a record that you once allowed it. That record is still listed under Site access, and re-adding the site won't prompt again. To clear it completely, use **Manage site access** in the popup's footer, which opens that settings page. Revoking a site there removes it from Idly too. The list stays on this browser and doesn't sync to your other devices. The nudge interval does sync.
+Idly keeps its own list of websites on this device. It doesn't sync, because the browser's site permissions don't either. The browser's **Site access** settings are only about what Idly is *allowed* to touch:
+- **Removing a site in the popup** stops Idly there straight away, including in tabs that are already open. The browser still remembers that you once allowed the site, so it stays under Site access, and re-adding it won't prompt again. To clear that record, use **Manage site access** in the popup footer.
+- **Revoking a site under Site access** removes it from Idly's list too, because Idly can't run there any more.
+- **Sites you grant from the browser's own menu** aren't added to the list. Only the popup adds sites.
 
 ## Limits
 
 - Idly can't get past a **server-side absolute session limit**, for example a forced re-login after a fixed number of hours whatever you do.
 - Some sites ignore synthetic events. On those, only the dialog auto-click helps.
-- After you remove a website, reload any open tabs on it to fully stop Idly there.
 - The popup's outer corners are drawn by the browser, so they may be square (as in Brave) even though the design shows them rounded.
 
 ## Files

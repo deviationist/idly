@@ -66,18 +66,32 @@ if (!window.__idly) {
     simulateActivity();
   }
 
-  chrome.runtime.onMessage.addListener((msg) => {
-    if (msg?.type === "idly:nudge") nudge();
-  });
-
   // React as soon as a warning dialog appears rather than waiting for the next tick.
   // MutationObserver callbacks are not throttled the way timers are in background tabs.
+  let observer = null;
   let pending = false;
-  new MutationObserver(() => {
-    if (pending) return;
-    pending = true;
-    setTimeout(() => { pending = false; dismissSessionDialogs(); }, 250);
-  }).observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["open", "class", "aria-hidden", "style"] });
+  function start() {
+    if (observer) return;
+    observer = new MutationObserver(() => {
+      if (pending) return;
+      pending = true;
+      setTimeout(() => { pending = false; if (observer) dismissSessionDialogs(); }, 250);
+    });
+    observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["open", "class", "aria-hidden", "style"] });
+  }
 
+  // Sent when the site is removed from Idly's list. Losing the host permission
+  // doesn't unload a running content script, so it has to switch itself off.
+  function stop() {
+    observer?.disconnect();
+    observer = null;
+  }
+
+  chrome.runtime.onMessage.addListener((msg) => {
+    if (msg?.type === "idly:nudge") { start(); nudge(); }
+    if (msg?.type === "idly:stop") stop();
+  });
+
+  start();
   nudge();
 }

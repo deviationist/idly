@@ -1,11 +1,16 @@
 // Site-entry logic shared by the popup and the service worker. Nothing here
 // touches browser APIs, so test/shared.test.mjs can run it under plain Node.
 //
-// The list of websites isn't stored by Idly: it's the set of host permissions
-// the browser has granted (chrome.permissions.getAll). Allowing the permission
-// prompt is what adds a website, and revoking it in the browser removes it.
+// Idly keeps its own list of websites (chrome.storage.local "sites"). Host
+// permissions only say what Idly may touch: the browser remembers grants even
+// after they're removed, and can grant more than the user listed.
 
+// Settings, synced across devices.
 export const DEFAULTS = { intervalMin: 1, pageSubdomains: false };
+// Per-device state. The list isn't synced because permissions aren't: a synced list
+// would show sites Idly can't access on the other device. "pending" is the entry
+// waiting for the permission prompt (see popup.js addEntry).
+export const LOCAL_DEFAULTS = { sites: [], pending: null };
 export const INTERVAL = { min: 0.5, max: 60, step: 0.5 };
 
 export const MESSAGES = {
@@ -16,8 +21,6 @@ export const MESSAGES = {
   replaced: (hosts, entry) => `Replaced ${listJoin(hosts)} with ${entry}.`,
   declined: "Permission was declined.",
   saveFailed: "Couldn't save. Try again.",
-  removed: (entry) => `Removed ${entry}. The browser still remembers the permission; clear it under Manage site access.`,
-  removeFailed: "Couldn't remove it. Try again, or remove it in the browser's extension settings.",
 };
 
 // A site entry is either an exact host ("bank.com") or a wildcard ("*.bank.com"),
@@ -100,9 +103,8 @@ export function entryFromOrigin(origin) {
   return parsed.wildcard ? `*.${parsed.host}` : parsed.host;
 }
 
-// Groups granted patterns into the popup's list: [{ entry, origins }], sorted by
-// domain. One entry can have several patterns (the browser may grant http and
-// https separately), and all of them are revoked when it's removed.
+// Groups granted patterns by entry: [{ entry, origins }], sorted by domain. One entry
+// can have several patterns (the browser may grant http and https separately).
 export function entriesFromOrigins(origins) {
   const byEntry = new Map();
   for (const origin of origins) {
