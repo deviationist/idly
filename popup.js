@@ -6,6 +6,7 @@ import {
 const $ = (id) => document.getElementById(id);
 const field = $("domain");
 const subdomains = $("subdomains");
+const pageSubdomains = $("page-subdomains");
 let sites = []; // [{ entry, origins }] from the browser's granted permissions
 let currentHost = null;
 
@@ -22,6 +23,7 @@ async function loadSites() {
 async function load() {
   const settings = await chrome.storage.sync.get(DEFAULTS);
   $("interval").value = settings.intervalMin;
+  pageSubdomains.checked = settings.pageSubdomains;
   await loadSites();
 
   // activeTab exposes the URL of the tab the popup was opened from.
@@ -41,11 +43,13 @@ function render() {
 function renderCurrent() {
   const btn = $("current-btn");
   const status = $("current-status");
+  const scope = $("page-scope");
+  const hint = $("page-hint");
   if (!currentHost) {
     $("current-host").textContent = "Idly can't run on this page.";
     status.textContent = "";
     status.className = "";
-    btn.hidden = true;
+    btn.hidden = scope.hidden = hint.hidden = true;
     return;
   }
   $("current-host").textContent = currentHost;
@@ -57,12 +61,15 @@ function renderCurrent() {
     btn.textContent = cover === currentHost ? "Stop keeping me logged in" : `Stop for all of ${baseOf(cover)}`;
     btn.className = "";
     btn.onclick = () => removeSite(cover);
+    scope.hidden = hint.hidden = true;
   } else {
     status.className = "";
     status.textContent = "Not active";
     btn.textContent = "Keep me logged in";
     btn.className = "primary";
-    btn.onclick = () => addEntry(planAdd(entries(), currentHost, false));
+    btn.onclick = () => addEntry(planAdd(entries(), currentHost, pageSubdomains.checked));
+    scope.hidden = hint.hidden = false;
+    hint.textContent = pageSubdomains.checked ? `Adds *.${stripWww(currentHost)}` : `Adds ${currentHost} only`;
   }
 }
 
@@ -156,7 +163,9 @@ async function removeSite(entry) {
   if (!site) return;
   const removed = await chrome.permissions.remove({ origins: site.origins }).catch(() => false);
   if (!removed) return feedback({ error: MESSAGES.removeFailed });
-  feedback();
+  // permissions.remove only drops the active permission. The browser keeps the grant
+  // on record (and lists it under Site access) until the user revokes it there.
+  feedback({ notice: MESSAGES.removed(entry) });
 }
 
 // Re-render whenever the browser's grants change: after a prompt, after a removal,
@@ -167,6 +176,16 @@ async function refresh() {
 }
 chrome.permissions.onAdded.addListener(refresh);
 chrome.permissions.onRemoved.addListener(refresh);
+
+// Remembered, so the choice sticks for the next "Keep me logged in".
+pageSubdomains.addEventListener("change", () => {
+  renderCurrent();
+  chrome.storage.sync.set({ pageSubdomains: pageSubdomains.checked }).catch(() => {});
+});
+
+// The only place a site's permission can be revoked completely (see removeSite).
+// Chromium-based browsers such as Brave accept the chrome:// address.
+$("manage").onclick = () => chrome.tabs.create({ url: `chrome://extensions/?id=${chrome.runtime.id}` });
 
 $("interval").onchange = async (e) => {
   const v = clampInterval(e.target.value);

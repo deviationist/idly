@@ -29,7 +29,7 @@ Idly is a Chromium extension that keeps chosen sites (online banking, say) from 
 - Revoking it, in the popup or in the browser's extension settings, is what removes one.
 - Grants that aren't a single website, such as `*://*/*` from "On all sites", are ignored.
 
-`chrome.storage.sync` holds only `{ intervalMin }`. The popup and the background never message each other: both react to permission and storage events.
+`chrome.storage.sync` holds only settings: `{ intervalMin, pageSubdomains }`. The popup and the background never message each other: both react to permission and storage events.
 
 **Site entries** come in two forms:
 - `example.com` is an **exact host**. It maps to `*://example.com/*`, and `www.example.com` is not included.
@@ -38,7 +38,7 @@ Idly is a Chromium extension that keeps chosen sites (online banking, say) from 
 `covers()` has to agree with Chrome's match-pattern semantics, because the popup uses it for the "via" status and the overlap rules, while Chrome uses the pattern to inject the script.
 
 **Adding** (see `planAdd`):
-- **Keep me logged in** adds the current tab's exact host.
+- **Keep me logged in** adds the current tab's exact host. With the card's **Include subdomains** box ticked (`#page-subdomains`, remembered as `pageSubdomains`), it adds `*.<host without www.>` instead. The hint under the box shows the exact entry.
 - The form adds an exact host or, when **Include subdomains** (`#subdomains`, ticked by default) is on, a wildcard. Wildcards drop a leading `www.`.
 - The duplicate and overlap rules, in order:
   1. An entry that's already listed → "Already in the list."
@@ -62,9 +62,11 @@ Idly is a Chromium extension that keeps chosen sites (online banking, say) from 
 - **Synthetic keys must be inert.** Only a lone Shift is dispatched. Don't add keys that could type text, submit forms or trigger shortcuts.
 - **`chrome.permissions.request` must run synchronously inside the click or submit handler.** Any `await` before it loses the user gesture and Chrome rejects the request. That's why parsing and `planAdd` are synchronous. See `addEntry` in `popup.js`.
 - **Never rely on code after `chrome.permissions.request` in the popup.** The popup usually closes while the browser shows its prompt, which kills its script. Anything that has to happen after a grant (such as replacing covered entries) belongs in `background.js` under `permissions.onAdded`. Keeping our own copy of the list is what caused the "granted but not listed" bug in 0.1.
+- **Removing only drops the *active* permission.** `chrome.permissions.remove` leaves the grant in the browser's *granted* set, which Brave and Chrome list under Site access and which lets a re-request skip the prompt ([Chromium docs](https://chromium.googlesource.com/chromium/src/+/main/extensions/docs/permissions.md)). No API lets an extension revoke a grant completely. That's why the popup has the **Manage site access** link and says so after a removal.
 - **Never lose access to a listed site.** Chrome doesn't document how revoking a narrow pattern interacts with a broader grant, so `replaceCovered` checks that the wildcard is still granted afterwards and logs an error if it isn't.
 - **Popup element IDs and classes are a contract** with the design:
   - IDs: `current-host`, `current-status`, `current-btn`, `sites`, `add`, `domain`, `subdomains`, `error`, `notice`, `interval`.
+  - Added after the handoff, and not in `design/`: `page-scope`, `page-subdomains`, `page-hint` (the scope option under **Keep me logged in**) and `manage` (the footer link to the browser's site-access settings).
   - Classes set by the script: `on`, `primary`, `muted`.
   - Classes used only by CSS: `wild`, `scope-all`, `scope-exact`.
 - **Light and dark mode are both required.** Colours are custom properties on `:root`, overridden under `prefers-color-scheme: dark`, and `color-scheme: light dark` keeps native controls themed. All text needs WCAG AA contrast (4.5:1) in both themes. The only change from the design's tokens is `--placeholder`, adjusted for exactly this reason. The header logo and the toolbar icon also switch with the theme.
@@ -75,7 +77,7 @@ Idly is a Chromium extension that keeps chosen sites (online banking, say) from 
 `design/` holds the Claude Design handoff and is the reference for all GUI work:
 - `design/reference/Idly Mockups.dc.html` has every popup state in light and dark. Open it in a browser (it loads `support.js` and React from unpkg). Those states are the acceptance checklist for the popup.
 - `design/README.md` is the handoff spec (layout, tokens, copy, behaviour).
-- `design/popup.html` is the popup exactly as delivered. The shipped `popup.html` differs only in the placeholder contrast and the theme-switching header logo.
+- `design/popup.html` is the popup exactly as delivered. The shipped `popup.html` differs in the placeholder contrast, the theme-switching header logo, the scope option under **Keep me logged in** and the **Manage site access** footer link.
 - `design/icons/` holds the icon sources (SVG and PNG, options a/b/c and mono).
 
 Nothing in `design/` ships or is loaded by the extension. Square popup corners are accepted. The browser draws the popup frame, and a transparent page background doesn't help (tested: the browser paints an opaque background behind it). The rounded card in the mockups is only presentation. The only known workaround is a fake popup injected into the web page with a content script, and it was rejected: it would draw our UI inside bank pages, can't appear on browser pages, and would need broader permissions.

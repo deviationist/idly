@@ -5,7 +5,7 @@
 // the browser has granted (chrome.permissions.getAll). Allowing the permission
 // prompt is what adds a website, and revoking it in the browser removes it.
 
-export const DEFAULTS = { intervalMin: 1 };
+export const DEFAULTS = { intervalMin: 1, pageSubdomains: false };
 export const INTERVAL = { min: 0.5, max: 60, step: 0.5 };
 
 export const MESSAGES = {
@@ -16,6 +16,7 @@ export const MESSAGES = {
   replaced: (hosts, entry) => `Replaced ${listJoin(hosts)} with ${entry}.`,
   declined: "Permission was declined.",
   saveFailed: "Couldn't save. Try again.",
+  removed: (entry) => `Removed ${entry}. The browser still remembers the permission; clear it under Manage site access.`,
   removeFailed: "Couldn't remove it. Try again, or remove it in the browser's extension settings.",
 };
 

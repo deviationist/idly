@@ -11,7 +11,7 @@ A Chromium extension (Manifest V3, vanilla JS, no build step) that stops chosen 
 ## How it works
 
 There are two ways to add a website:
-- **Keep me logged in** on the site you're on adds its exact address.
+- **Keep me logged in** on the site you're on adds its exact address, or, with the **Include subdomains** box under it ticked, the whole domain (`www.bank.com` becomes `*.bank.com`). Idly remembers your choice for next time.
 - The **Add a website** form accepts a domain or a pasted URL. With **Include subdomains** ticked (the default), `bank.com` is saved as `*.bank.com`, which covers bank.com and all its subdomains, such as `www.` and `auth.`. Unticked, it covers only the exact address you typed.
 
 Idly refuses addresses without a TLD, IP addresses and duplicates. If a wildcard already covers an address, it tells you. A new wildcard replaces the narrower entries it covers.
@@ -24,7 +24,7 @@ On each enabled site, Idly does the following:
 
 ## Where the list lives
 
-Idly doesn't keep its own list of websites. The list is the set of sites you've granted Idly access to, so the popup and the browser's extension settings (**Site access**) always agree. Remove a site in either place and it's gone from both. The list stays on this browser and doesn't sync to your other devices. The nudge interval does sync.
+Idly doesn't keep its own list of websites. The list is the set of sites you've granted Idly access to, so the popup and the browser's extension settings (**Site access**) always agree. Removing a site in the popup stops Idly there at once, but the browser keeps a record that you once allowed it. That record is still listed under Site access, and re-adding the site won't prompt again. To clear it completely, use **Manage site access** in the popup's footer, which opens that settings page. Revoking a site there removes it from Idly too. The list stays on this browser and doesn't sync to your other devices. The nudge interval does sync.
 
 ## Limits
 
