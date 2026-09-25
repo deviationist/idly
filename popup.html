@@ -1,0 +1,57 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <style>
+    :root { --fg: #1b1b1b; --muted: #666; --bg: #fff; --line: #e3e3e3; --accent: #1f8a4c; --err: #c62828; }
+    @media (prefers-color-scheme: dark) {
+      :root { --fg: #eee; --muted: #999; --bg: #202124; --line: #3c3c3c; --err: #ef9a9a; }
+    }
+    body { font: 13px/1.4 system-ui, sans-serif; color: var(--fg); background: var(--bg); margin: 0; width: 320px; }
+    header { padding: 12px 14px; border-bottom: 1px solid var(--line); font-weight: 600; }
+    section { padding: 12px 14px; border-bottom: 1px solid var(--line); }
+    section:last-child { border-bottom: 0; }
+    h2 { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 8px; }
+    button { font: inherit; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--line); background: transparent; color: var(--fg); cursor: pointer; }
+    button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    #current-btn { width: 100%; margin-top: 8px; }
+    .host { word-break: break-all; }
+    .status { color: var(--muted); }
+    .status.on { color: var(--accent); }
+    input { font: inherit; color: var(--fg); background: transparent; border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
+    form { display: flex; gap: 6px; margin-top: 8px; }
+    form input { flex: 1; min-width: 0; }
+    ul { list-style: none; margin: 0; padding: 0; }
+    li { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 4px 0; word-break: break-all; }
+    li button { padding: 2px 8px; }
+    label { display: flex; justify-content: space-between; align-items: center; }
+    input[type=number] { width: 64px; }
+    .muted { color: var(--muted); }
+    .error { color: var(--err); margin-top: 6px; }
+    .error:empty { display: none; }
+  </style>
+</head>
+<body>
+  <header>Idly</header>
+  <section id="current">
+    <h2>This page</h2>
+    <div class="host" id="current-host">—</div>
+    <div class="status" id="current-status"></div>
+    <button id="current-btn" class="primary" hidden></button>
+  </section>
+  <section>
+    <h2>Active domains</h2>
+    <ul id="sites"></ul>
+    <form id="add">
+      <input id="domain" placeholder="Add a domain, e.g. example.com" autocomplete="off" spellcheck="false" />
+      <button type="submit">Add</button>
+    </form>
+    <div class="muted" style="margin-top:6px">A domain also covers all of its subdomains.</div>
+    <div class="error" id="error"></div>
+  </section>
+  <section>
+    <label>Nudge every (minutes) <input type="number" id="interval" min="0.5" step="0.5" /></label>
+  </section>
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

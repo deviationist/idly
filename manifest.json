@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "Idly",
+  "version": "0.1.0",
+  "description": "Keeps chosen sites from logging you out for inactivity.",
+  "minimum_chrome_version": "120",
+  "permissions": ["storage", "alarms", "scripting", "activeTab"],
+  "optional_host_permissions": ["*://*/*"],
+  "background": { "service_worker": "background.js", "type": "module" },
+  "action": { "default_popup": "popup.html", "default_title": "Idly" }
+}
