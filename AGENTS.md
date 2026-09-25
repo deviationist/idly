@@ -34,6 +34,7 @@ Idly is a Chromium extension that keeps chosen sites (online banking, say) from 
 - **Synthetic keys must be inert.** Only a lone Shift is dispatched. Don't add keys that could type text, submit forms or trigger shortcuts.
 - **`chrome.permissions.request` must run synchronously inside the click or submit handler.** Any `await` before it loses the user gesture and Chrome rejects the request. See `addSite` in `popup.js`.
 - **Popup element IDs are a contract** with `DESIGN_PROMPT.md` (the GUI is redesigned in Claude Design and dropped back in). The IDs are `current-host`, `current-status`, `current-btn`, `sites`, `add`, `domain`, `subdomains`, `error`, `interval`. The classes are `on`, `primary`, `muted`. If you change one, update `DESIGN_PROMPT.md` too.
+- **The popup must work in light and dark mode.** Colours are custom properties on `:root`, overridden under `prefers-color-scheme: dark`. `color-scheme: light dark` keeps native controls themed. Text keeps WCAG AA contrast (4.5:1) in both themes: `--accent` is for button backgrounds and `--ok` for status text. Check both themes whenever you touch the styles.
 - Keep requested permissions minimal. Don't add `tabs`, because `activeTab` plus the per-domain host permissions already cover it.
 
 ## Adding support for a site

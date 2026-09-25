@@ -19,7 +19,7 @@ People open it for a few seconds, next to their bank. It has to feel **calm, tru
 ## Deliverables
 
 1. **`popup.html`**: one self-contained file with an inline `<style>`.
-2. **An icon** as SVG that still reads at 16×16 in the toolbar, with sizes 16, 32, 48 and 128. It should suggest "staying awake" or "session kept alive", for example an open eye, a steady pulse or a small lit dot. It must not suggest a lock or a shield, because Idly isn't a security product. The icon sits next to a green **ON** badge (`#1f8a4c`) that Chrome draws over its bottom-right corner on active sites, so leave room for it.
+2. **An icon** as SVG that still reads at 16×16 in the toolbar, with sizes 16, 32, 48 and 128. It should suggest "staying awake" or "session kept alive", for example an open eye, a steady pulse or a small lit dot. It must not suggest a lock or a shield, because Idly isn't a security product. The icon sits next to a green **ON** badge (`#1b7d44`) that Chrome draws over its bottom-right corner on active sites, so leave room for it.
 
 Please show mockups of every state listed below, in both light and dark mode.
 
@@ -27,7 +27,8 @@ Please show mockups of every state listed below, in both light and dark mode.
 
 - The popup width is fixed at **320–360px**. The height grows with content up to about 600px, after which the domain list scrolls rather than the whole popup.
 - **Plain HTML and CSS only.** No JavaScript, no frameworks, and no external fonts, CDNs or remote images: the extension's content security policy blocks them. Use the system font stack. Icons inside the popup must be inline SVG.
-- Support light and dark mode with `@media (prefers-color-scheme: dark)`, with colours defined as custom properties on `:root`.
+- **Light and dark mode are both required.** Chrome follows the system or browser theme through `@media (prefers-color-scheme: dark)`, so no manual toggle is needed. Define colours as custom properties on `:root`, and set `color-scheme: light dark` so native controls (the checkbox, number input and scrollbars) match the theme.
+- Text must meet WCAG AA contrast (4.5:1) in **both** themes, including the green active status and any text on a green button. The current green is `#1b7d44`, with `#4cc27d` for status text on dark.
 - Hostnames can be long (`netbank.example.com`, `secure.online-banking.example.co.uk`). They must wrap or truncate cleanly without making the popup wider.
 - Make it keyboard accessible, with visible focus rings and sufficient contrast.
 

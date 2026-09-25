@@ -52,7 +52,7 @@ async function refreshTabs() {
       chrome.tabs.update(t.id, { autoDiscardable: !on.has(t.id) }).catch(() => {});
     }
   }
-  chrome.action.setBadgeBackgroundColor({ color: "#1f8a4c" });
+  chrome.action.setBadgeBackgroundColor({ color: "#1b7d44" });
 }
 
 // Inject into tabs that were already open when a site was enabled.

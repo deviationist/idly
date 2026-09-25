@@ -3,9 +3,9 @@
 <head>
   <meta charset="utf-8" />
   <style>
-    :root { --fg: #1b1b1b; --muted: #666; --bg: #fff; --line: #e3e3e3; --accent: #1f8a4c; --err: #c62828; }
+    :root { color-scheme: light dark; --fg: #1b1b1b; --muted: #666; --bg: #fff; --line: #e3e3e3; --accent: #1b7d44; --ok: #1b7d44; --err: #c62828; }
     @media (prefers-color-scheme: dark) {
-      :root { --fg: #eee; --muted: #999; --bg: #202124; --line: #3c3c3c; --err: #ef9a9a; }
+      :root { --fg: #eee; --muted: #999; --bg: #202124; --line: #3c3c3c; --err: #ef9a9a; --ok: #4cc27d; }
     }
     body { font: 13px/1.4 system-ui, sans-serif; color: var(--fg); background: var(--bg); margin: 0; width: 320px; }
     header { padding: 12px 14px; border-bottom: 1px solid var(--line); font-weight: 600; }
@@ -17,11 +17,12 @@
     #current-btn { width: 100%; margin-top: 8px; }
     .host { word-break: break-all; }
     .status { color: var(--muted); }
-    .status.on { color: var(--accent); }
+    .status.on { color: var(--ok); }
     .status.on::before { content: "● "; }
     input { font: inherit; color: var(--fg); background: transparent; border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
     form { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
     #domain { flex: 1; min-width: 0; }
+    .check input { accent-color: var(--accent); margin: 0; }
     .check { flex-basis: 100%; display: flex; justify-content: flex-start; align-items: center; gap: 6px; }
     ul { list-style: none; margin: 0; padding: 0; }
     li { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 4px 0; word-break: break-all; }
