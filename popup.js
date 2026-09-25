@@ -37,7 +37,7 @@ function renderCurrent() {
   const cover = coveringDomain(currentHost);
   if (cover) {
     status.className = "status on";
-    status.textContent = cover === currentHost ? "● Staying logged in" : `● Staying logged in (via ${cover})`;
+    status.textContent = cover === currentHost ? "Staying logged in" : `Staying logged in (via ${cover})`;
     btn.textContent = cover === currentHost ? "Stop keeping me logged in" : `Stop for all of ${cover}`;
     btn.className = "";
     btn.onclick = () => removeSite(cover);

@@ -1,20 +1,82 @@
-Design the popup UI for **Idly**, a Chrome extension that keeps chosen websites (for example an online bank) from logging the user out for inactivity. The popup opens from the toolbar icon.
+# Claude Design prompt: Idly popup and icon
 
-**Constraints**
-- Chrome extension popup: fixed width of 320–360px, height grows with content, maximum of about 600px.
-- Deliver one `popup.html` with inline `<style>`. Use plain HTML and CSS only: no frameworks, no external fonts or CDNs (extension CSP), no JavaScript.
-- Support light and dark mode through `prefers-color-scheme`, using CSS custom properties on `:root`.
-- Calm, trustworthy, minimal. It sits next to a banking site, so no playful gimmicks. A subtle "alive" motif, like a soft pulse on the active state, is welcome.
+Paste everything below the line into Claude Design.
 
-**Sections, top to bottom**
-1. **Header:** the name "Idly" with a small mark.
-2. **This page:** the current hostname (can be long, like `netbank.example.com`), a status line, and one full-width button. Two states:
-   - Not active: status "Not active", primary button "Keep me logged in".
-   - Active: status "Staying logged in", or "Staying logged in (via example.com)" when a parent domain covers it; secondary button "Stop keeping me logged in", or "Stop for all of example.com" when a parent domain covers it.
-   - A third state for pages it can't run on (like `chrome://`): the message "Idly can't run on this page." and no button.
-3. **Active domains:** a list of domains, each with a Remove action, and an empty state ("No domains yet."). Below the list, an inline form with a text input (placeholder "Add a domain, e.g. example.com") and an Add button. Add a hint, "A domain also covers all of its subdomains.", and an inline error line such as "That doesn't look like a domain." or "Permission was declined."
-4. **Settings:** "Nudge every (minutes)", a number input with a minimum of 0.5 and a step of 0.5.
+---
 
-**Keep these element IDs exactly.** The existing `popup.js` depends on them:
-`current-host`, `current-status`, `current-btn`, `sites` (a `<ul>` that the script fills with `<li><span>domain</span><button>Remove</button></li>`), `add` (a `<form>`), `domain` (text input), `error`, `interval` (number input).
-The script also switches these classes, so style them: `#current-status.on` (the active state), `#current-btn.primary` (primary compared with secondary), `li.muted` (the empty-state item), and `.error:empty` (hidden when there's no error). Load the script with `<script type="module" src="popup.js"></script>` at the end of `<body>`.
+Design the toolbar popup and icon for **Idly**, a Chrome extension that stops websites from logging you out when you're idle.
+
+## Who it's for and why
+
+The user logs into their online bank, then spends a while in other tabs (a budgeting spreadsheet, email). When they come back to the bank tab they've been logged out and have to go through the full login again, often with a code from a phone or card reader. Idly fixes that. On the bank tab the user clicks the Idly icon, then **Keep me logged in**. From then on Idly quietly keeps that site's session alive in the background.
+
+The popup is used in two moments:
+1. **Turning it on:** "Keep me logged in on *this* site." This is the main action. It should be obvious and take one click.
+2. **Checking or managing:** "Where is Idly active?" This shows the list of sites, where the user can remove one or add one by typing a domain.
+
+People open it for a few seconds, next to their bank. It has to feel **calm, trustworthy and quiet**: closer to a system utility than a consumer app. Avoid playful mascots, loud gradients and anything that looks like a security warning. A gentle "alive" cue on the active state is welcome, such as a softly breathing dot or a slow pulse. Honour `prefers-reduced-motion`. All text is English.
+
+## Deliverables
+
+1. **`popup.html`**: one self-contained file with an inline `<style>`.
+2. **An icon** as SVG that still reads at 16×16 in the toolbar, with sizes 16, 32, 48 and 128. It should suggest "staying awake" or "session kept alive", for example an open eye, a steady pulse or a small lit dot. It must not suggest a lock or a shield, because Idly isn't a security product. The icon sits next to a green **ON** badge (`#1f8a4c`) that Chrome draws over its bottom-right corner on active sites, so leave room for it.
+
+Please show mockups of every state listed below, in both light and dark mode.
+
+## Technical constraints (Chrome extension)
+
+- The popup width is fixed at **320–360px**. The height grows with content up to about 600px, after which the domain list scrolls rather than the whole popup.
+- **Plain HTML and CSS only.** No JavaScript, no frameworks, and no external fonts, CDNs or remote images: the extension's content security policy blocks them. Use the system font stack. Icons inside the popup must be inline SVG.
+- Support light and dark mode with `@media (prefers-color-scheme: dark)`, with colours defined as custom properties on `:root`.
+- Hostnames can be long (`netbank.example.com`, `secure.online-banking.example.co.uk`). They must wrap or truncate cleanly without making the popup wider.
+- Make it keyboard accessible, with visible focus rings and sufficient contrast.
+
+## Layout, top to bottom
+
+### 1. Header
+The name "Idly" with the icon.
+
+### 2. This page
+This section is the focus of the popup. It shows the current tab's hostname, a status line and one full-width button. It has four states:
+
+| State | Hostname line | Status line | Button |
+|---|---|---|---|
+| Not active | `netbank.example.com` | "Not active" | Primary: **Keep me logged in** |
+| Active on this domain | `netbank.example.com` | "Staying logged in" (the active style) | Secondary: **Stop keeping me logged in** |
+| Active through a parent domain | `netbank.example.com` | "Staying logged in (via example.com)" | Secondary: **Stop for all of example.com** |
+| Unsupported page (for example `chrome://settings`) | "Idly can't run on this page." | empty | hidden |
+
+### 3. Active domains
+- A list of domains (such as `example.com` or `bank.example.org`), each with a small **Remove** action. It's usually 1–5 items, but it should handle 20 or more by scrolling.
+- An empty state: "No domains yet."
+- Below the list, an inline form with a text input (placeholder "Add a domain, e.g. example.com") and an **Add** button.
+- A hint: "A domain also covers all of its subdomains."
+- An inline error line, hidden when empty. Examples: "That doesn't look like a domain.", "Already in the list.", "Permission was declined."
+
+Adding a domain opens Chrome's own permission prompt, which you don't need to design.
+
+### 4. Settings
+One low-key row: "Nudge every (minutes)", with a small number input (minimum 0.5, step 0.5, default 1). This is an advanced setting, so give it less weight than everything above.
+
+## Contract with the existing script, so keep these exactly
+
+`popup.js` fills in and toggles the markup, so the design has to keep these hooks exactly:
+
+**Element IDs**
+- `current-host`: the hostname, or the unsupported-page message
+- `current-status`: the status line
+- `current-btn`: the This page button. It starts with the `hidden` attribute, and the script sets its label.
+- `sites`: an empty `<ul>`. The script fills it with `<li><span>example.com</span><button>Remove</button></li>` for each domain, or `<li class="muted">No domains yet.</li>` when there are none.
+- `add`: the `<form>`. `domain` is its text input, with a submit button inside the form.
+- `error`: the error line
+- `interval`: the number input
+
+**Classes the script toggles** (please style all of them)
+- `#current-status.on`: active. The script sets only the text, so the active dot or pulse must come from CSS, for example `::before`.
+- `#current-btn.primary`: the primary button. Without the class it's the secondary or stop style.
+- `li.muted`: the empty-state item
+- `.error:empty`: must be hidden
+
+Style `#sites li`, `#sites li span` and `#sites li button` through those selectors, because the script adds no classes to the list items.
+
+End `<body>` with `<script type="module" src="popup.js"></script>`.

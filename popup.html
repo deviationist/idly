@@ -18,6 +18,7 @@
     .host { word-break: break-all; }
     .status { color: var(--muted); }
     .status.on { color: var(--accent); }
+    .status.on::before { content: "● "; }
     input { font: inherit; color: var(--fg); background: transparent; border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
     form { display: flex; gap: 6px; margin-top: 8px; }
     form input { flex: 1; min-width: 0; }
