@@ -49,7 +49,7 @@ This section is the focus of the popup. It shows the current tab's hostname, a s
 ### 3. Active domains
 - A list of domains (such as `example.com` or `bank.example.org`), each with a small **Remove** action. It's usually 1–5 items, but it should handle 20 or more by scrolling.
 - An empty state: "No domains yet."
-- Below the list, an inline form with a text input (placeholder "Add a domain, e.g. example.com") and an **Add** button.
+- Below the list, an inline form with a text input (placeholder "Add a domain, e.g. example.com") and an **Add** button, plus an **Include subdomains** checkbox. When it's ticked, the entry is saved as `*.domain`.
 - A short help block explaining the two ways to write an entry. Keep both lines, but style them to suit the design:
   - `example.com`: "Only example.com itself"
   - `*.example.com`: "example.com and all its subdomains, like www.example.com and auth.example.com"
@@ -71,6 +71,7 @@ One low-key row: "Nudge every (minutes)", with a small number input (minimum 0.5
 - `current-btn`: the This page button. It starts with the `hidden` attribute, and the script sets its label.
 - `sites`: an empty `<ul>`. The script fills it with `<li><span>example.com</span><button>Remove</button></li>` for each domain, or `<li class="muted">No domains yet.</li>` when there are none.
 - `add`: the `<form>`. `domain` is its text input, with a submit button inside the form.
+- `subdomains`: an "Include subdomains" checkbox inside the form. The script ticks it when the user types `*.`, removes the `*.` from the input when it's unticked, and resets it after a successful add.
 - `error`: the error line
 - `interval`: the number input
 

@@ -91,12 +91,25 @@ async function removeSite(domain) {
   render();
 }
 
+// Keeps the "Include subdomains" checkbox and a typed "*." prefix in agreement.
+const WILDCARD_PREFIX = /^\s*([a-z]+:\/\/)?\*\./i;
+
+$("domain").oninput = () => {
+  if (WILDCARD_PREFIX.test($("domain").value)) $("subdomains").checked = true;
+};
+
+$("subdomains").onchange = () => {
+  if (!$("subdomains").checked) $("domain").value = $("domain").value.replace(WILDCARD_PREFIX, "$1");
+};
+
 $("add").onsubmit = (e) => {
   e.preventDefault();
-  const domain = normalizeDomain($("domain").value);
+  let domain = normalizeDomain($("domain").value);
   if (!domain) return void ($("error").textContent = "That doesn't look like a domain.");
+  if ($("subdomains").checked && !domain.startsWith("*.")) domain = `*.${domain}`;
   if (sites.includes(domain)) return void ($("error").textContent = "Already in the list.");
   $("domain").value = "";
+  $("subdomains").checked = false;
   addSite(domain);
 };
 

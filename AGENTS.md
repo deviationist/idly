@@ -25,7 +25,7 @@ Idly is a Chromium extension that keeps chosen sites (online banking, say) from 
 - `example.com` is an **exact host**. It maps to `*://example.com/*`, and `www.example.com` is not included.
 - `*.example.com` is a **wildcard**. It maps to `*://*.example.com/*`, which in Chrome also matches `example.com` itself.
 
-`normalizeDomain` strips the scheme, path and port and keeps a leading `*.`. It deliberately keeps `www.`, because with exact matching `www.example.com` is a different entry. **Keep me logged in** adds the current tab's exact hostname. `covers()` has to agree with Chrome's match-pattern semantics, because the popup uses it to show the "via" status while Chrome uses the pattern to inject the script.
+`normalizeDomain` strips the scheme, path and port and keeps a leading `*.`. It deliberately keeps `www.`, because with exact matching `www.example.com` is a different entry. **Keep me logged in** adds the current tab's exact hostname. In the add form, the **Include subdomains** checkbox (`#subdomains`) adds the `*.` prefix when the entry is saved. Typing `*.` ticks the box, and unticking the box removes a typed `*.`, so the two always agree. `covers()` has to agree with Chrome's match-pattern semantics, because the popup uses it to show the "via" status while Chrome uses the pattern to inject the script.
 
 ## Invariants: don't break these
 
@@ -33,7 +33,7 @@ Idly is a Chromium extension that keeps chosen sites (online banking, say) from 
 - **Never click logout.** `CONTINUE_TEXT` is anchored (`^`) to the start of the label. Check that new words can't match logout or cancel labels.
 - **Synthetic keys must be inert.** Only a lone Shift is dispatched. Don't add keys that could type text, submit forms or trigger shortcuts.
 - **`chrome.permissions.request` must run synchronously inside the click or submit handler.** Any `await` before it loses the user gesture and Chrome rejects the request. See `addSite` in `popup.js`.
-- **Popup element IDs are a contract** with `DESIGN_PROMPT.md` (the GUI is redesigned in Claude Design and dropped back in). The IDs are `current-host`, `current-status`, `current-btn`, `sites`, `add`, `domain`, `error`, `interval`. The classes are `on`, `primary`, `muted`. If you change one, update `DESIGN_PROMPT.md` too.
+- **Popup element IDs are a contract** with `DESIGN_PROMPT.md` (the GUI is redesigned in Claude Design and dropped back in). The IDs are `current-host`, `current-status`, `current-btn`, `sites`, `add`, `domain`, `subdomains`, `error`, `interval`. The classes are `on`, `primary`, `muted`. If you change one, update `DESIGN_PROMPT.md` too.
 - Keep requested permissions minimal. Don't add `tabs`, because `activeTab` plus the per-domain host permissions already cover it.
 
 ## Adding support for a site
