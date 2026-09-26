@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   parseInput, planAdd, covers, patternFor, stripWww, hasWildcardPrefix, clampInterval, MESSAGES,
-  entryFromOrigin, entriesFromOrigins,
+  entryFromOrigin, entriesFromOrigins, coveringEntry, parseKeepalive,
 } from "../shared.js";
 
 test("parseInput cleans hosts out of URLs", () => {
@@ -118,4 +118,20 @@ test("entriesFromOrigins groups, filters and sorts", () => {
       { entry: "www.x.org", origins: ["https://www.x.org/*", "http://www.x.org/*"] },
     ],
   );
+});
+
+test("coveringEntry prefers an exact entry over a wildcard", () => {
+  assert.equal(coveringEntry(["*.bank.com", "www.bank.com"], "www.bank.com"), "www.bank.com");
+  assert.equal(coveringEntry(["*.bank.com"], "auth.bank.com"), "*.bank.com");
+  assert.equal(coveringEntry(["bank.com"], "www.bank.com"), undefined);
+});
+
+test("parseKeepalive accepts own-origin paths and covered https URLs only", () => {
+  assert.deepEqual(parseKeepalive("", "*.bank.com"), { url: null });
+  assert.deepEqual(parseKeepalive(" /api/session?x=1#h ", "*.bank.com"), { url: "/api/session?x=1" });
+  assert.deepEqual(parseKeepalive("https://api.bank.com/ping", "*.bank.com"), { url: "https://api.bank.com/ping" });
+  assert.deepEqual(parseKeepalive("https://api.bank.com/ping", "bank.com"), { error: MESSAGES.keepaliveHost("bank.com") });
+  assert.deepEqual(parseKeepalive("https://evil.example/ping", "*.bank.com"), { error: MESSAGES.keepaliveHost("*.bank.com") });
+  for (const s of ["http://api.bank.com/ping", "//evil.example/x", "api/session", "javascript:alert(1)"])
+    assert.ok(parseKeepalive(s, "*.bank.com").error, s);
 });

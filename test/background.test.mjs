@@ -171,3 +171,37 @@ test("debug logging is off by default and follows the setting", async () => {
     console.info = original;
   }
 });
+
+test("nudges carry the site's options; synthetic input is off unless opted in", async () => {
+  const nudges = [];
+  chrome.tabs.query = async ({ url } = {}) => [{ id: 3, url: "https://netbank.bank.example/overview" }];
+  chrome.tabs.sendMessage = async (id, msg) => { if (msg.type === "idly:nudge") nudges.push(msg.options); return {}; };
+  await chrome.storage.local.set({ pending: "*.bank.example" });
+  userAllows("*://*.bank.example/*");
+  await settle();
+
+  chrome.alarms.onAlarm.fire({ name: "idly-tick" });
+  await new Promise((r) => setTimeout(r, 3200));
+  assert.deepEqual(nudges.pop(), {}, "no options: dialog clicks only");
+
+  message({ type: "idly:options", entry: "*.bank.example", options: { simulate: false, keepalive: "/api/session" } });
+  await settle();
+  assert.deepEqual(chrome.storage.local.peek().options, { "*.bank.example": { keepalive: "/api/session" } });
+  chrome.alarms.onAlarm.fire({ name: "idly-tick" });
+  await new Promise((r) => setTimeout(r, 3200));
+  assert.deepEqual(nudges.pop(), { keepalive: "/api/session" });
+});
+
+test("options leave with their site", async () => {
+  await chrome.storage.local.set({ pending: "bank.example" });
+  userAllows("*://bank.example/*");
+  await settle();
+  message({ type: "idly:options", entry: "bank.example", options: { simulate: true } });
+  await settle();
+  message({ type: "idly:options", entry: "not-listed.example", options: { simulate: true } });
+  await settle();
+  assert.deepEqual(chrome.storage.local.peek().options, { "bank.example": { simulate: true } });
+  message({ type: "idly:remove", entry: "bank.example" });
+  await settle();
+  assert.deepEqual(chrome.storage.local.peek().options, {});
+});

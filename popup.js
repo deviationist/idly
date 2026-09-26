@@ -1,5 +1,5 @@
 import {
-  DEFAULTS, LOCAL_DEFAULTS, MESSAGES, patternFor, covers, baseOf,
+  DEFAULTS, LOCAL_DEFAULTS, MESSAGES, KEEPALIVE_MIN, patternFor, baseOf, coveringEntry, parseKeepalive,
   parseInput, planAdd, stripWww, hasWildcardPrefix, clampInterval,
 } from "./shared.js";
 
@@ -8,13 +8,14 @@ const field = $("domain");
 const subdomains = $("subdomains");
 const pageSubdomains = $("page-subdomains");
 let sites = []; // Idly's list, from chrome.storage.local. background.js is its only writer.
+let options = {}; // Per-site settings, keyed by entry. Also written only by background.js.
+let openEntry = null; // The site whose options panel is open.
 let currentHost = null;
 
-// The listed entry that covers host, preferring an exact match over a wildcard.
-const coveringEntry = (host) => sites.find((e) => e === host) ?? sites.find((e) => covers(e, host));
+const coveringSite = (host) => coveringEntry(sites, host);
 
 async function loadSites() {
-  ({ sites } = await chrome.storage.local.get(LOCAL_DEFAULTS));
+  ({ sites, options } = await chrome.storage.local.get(LOCAL_DEFAULTS));
 }
 
 async function load() {
@@ -53,7 +54,7 @@ function renderCurrent() {
   }
   $("current-host").textContent = currentHost;
   btn.hidden = false;
-  const cover = coveringEntry(currentHost);
+  const cover = coveringSite(currentHost);
   if (cover) {
     status.className = "on";
     status.textContent = cover === currentHost ? "Staying logged in" : `Staying logged in (via ${cover})`;
@@ -86,14 +87,59 @@ function renderList() {
     const span = document.createElement("span");
     span.textContent = entry;
     span.title = entry; // Long hostnames are truncated with an ellipsis.
-    const rm = document.createElement("button");
-    rm.type = "button";
-    rm.textContent = "Remove";
-    rm.setAttribute("aria-label", `Remove ${entry}`);
-    rm.onclick = () => removeSite(entry);
-    li.append(span, rm);
+    const opts = options[entry] ?? {};
+    const tags = document.createElement("span");
+    tags.className = "tags";
+    tags.textContent = [opts.keepalive && "keepalive", opts.simulate && "simulates"].filter(Boolean).join(" · ");
+    const more = button("Options", `Options for ${entry}`, () => {
+      openEntry = openEntry === entry ? null : entry;
+      renderList();
+    });
+    more.setAttribute("aria-expanded", String(openEntry === entry));
+    li.append(span, tags, more, button("Remove", `Remove ${entry}`, () => removeSite(entry)));
     list.append(li);
+    if (openEntry === entry) list.append(optionsPanel(entry, opts));
   }
+}
+
+function button(text, label, onclick) {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.textContent = text;
+  b.setAttribute("aria-label", label);
+  b.onclick = onclick;
+  return b;
+}
+
+// Per-site settings. Synthetic input is off by default because bank bot detection
+// can block the whole browser for it (see content.js simulateActivity).
+function optionsPanel(entry, opts) {
+  const li = document.createElement("li");
+  li.className = "options";
+  const id = `ka-${sites.indexOf(entry)}`;
+  li.innerHTML = `
+    <label class="check"><input type="checkbox"> Simulate activity</label>
+    <p class="hint warn">Sends fake mouse and key events. Banks' bot protection can block your browser for this, so only use it on sites without it.</p>
+    <label class="opt-label" for="${id}">Keepalive request (GET)</label>
+    <form class="opt-form">
+      <input id="${id}" type="text" placeholder="/api/session" spellcheck="false" autocapitalize="off">
+      <button type="submit">Save</button>
+    </form>
+    <p class="error" role="alert"></p>
+    <p class="hint">Fetched from the page about every ${KEEPALIVE_MIN} minutes, at irregular intervals, with the page's own cookies. Find a request the page already makes in DevTools → Network.</p>`;
+  const [simulate, keepalive] = li.querySelectorAll("input");
+  const error = li.querySelector(".error");
+  simulate.checked = !!opts.simulate;
+  keepalive.value = opts.keepalive ?? "";
+  const save = (next) => chrome.runtime.sendMessage({ type: "idly:options", entry, options: { ...opts, ...next } });
+  simulate.onchange = () => save({ simulate: simulate.checked });
+  li.querySelector("form").onsubmit = (e) => {
+    e.preventDefault();
+    const parsed = parseKeepalive(keepalive.value, entry);
+    error.textContent = parsed.error ?? "";
+    if (!parsed.error) save({ keepalive: parsed.url });
+  };
+  return li;
 }
 
 function feedback({ error = "", notice = "" } = {}) {
@@ -171,7 +217,7 @@ function removeSite(entry) {
 
 // Re-render whenever background.js changes the list.
 chrome.storage.onChanged.addListener(async (changes, area) => {
-  if (area !== "local" || !changes.sites) return;
+  if (area !== "local" || !(changes.sites || changes.options)) return;
   await loadSites();
   render();
 });

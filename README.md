@@ -16,11 +16,14 @@ There are two ways to add a website:
 
 Idly refuses addresses without a TLD, IP addresses and duplicates. If a wildcard already covers an address, it tells you. A new wildcard replaces the narrower entries it covers.
 
-On each enabled site, Idly does the following:
+On each site in your list, Idly does the following:
 
-- **Simulated activity:** every *N* minutes (1 by default) it sends mouse, pointer and Shift-key events so the page's idle timer keeps resetting. Each tab's nudge comes after a random 1–3 second delay, so the timing isn't perfectly regular. The tick comes from `chrome.alarms`, so it still fires in background tabs where the page's own timers get throttled.
-- **Session-warning dismissal:** a `MutationObserver` watches for dialogs, including ones inside shadow DOM. A dialog only counts if its text mentions logout, session or inactivity. Idly then clicks its "Continue / Fortsett / Fortsätt / Jatka…" button. Buttons outside such dialogs are never clicked, so a "Continue" on a payment screen is left alone.
-- **No tab discarding:** tabs on enabled domains are marked non-discardable, so Chrome's Memory Saver doesn't put the bank tab to sleep while you work in other tabs.
+- **Clicks session warnings.** A `MutationObserver` watches for dialogs, including ones inside shadow DOM. A dialog only counts if its text mentions logout, session or inactivity (in English or the Nordic languages). Idly then clicks its "Continue / Fortsett / Fortsätt / Jatka…" button. Buttons outside such dialogs are never clicked, so a "Continue" on a payment screen is left alone.
+- **Keepalive request (optional, per site).** Under **Options** next to a site, you can give a GET request the site's own page already makes, such as `/api/session`. Idly sends it from the page about every 5 minutes, at irregular intervals (3½–6½ minutes), so the session on the bank's server stays alive. It's always a GET, only to that site, and Idly never reads your cookies.
+- **Simulated activity (optional, per site, risky).** Also under **Options**, and off by default. Idly sends mouse and key events so the page's idle timer keeps resetting. **Don't use it on banks.** Their bot detection can tell the events are synthetic and may block your browser. In testing, that blocked every Chromium browser on a home connection for a while.
+- **No tab discarding.** Tabs on your sites are marked non-discardable, so the browser's memory saver doesn't put the bank tab to sleep while you work in other tabs.
+
+A tick every *N* minutes (1 by default, from `chrome.alarms`, which keeps firing in background tabs) drives all of this, and each tab's tick comes after a random 1–3 second delay.
 
 ## Where the list lives
 

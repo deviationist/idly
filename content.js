@@ -4,7 +4,7 @@ if (!window.__idly) {
 
   // A dialog is treated as a session warning only if its text matches this.
   const SESSION_TEXT =
-    /(log(ged|ging)?\s*(you\s*)?out|sign(ed)?\s*out|session|inactiv|idle|timeout|time\s*out|expir|utlogg|logg(e|a)s?\s*ut|logget\s*ud|sesjon|sessionen|inaktiv|aktivitet|kirjau|istunto|vanhen)/i;
+    /(log(ged|ging)?\s*(you\s*)?out|sign(ed)?\s*out|session|inactiv|idle|timeout|time\s*out|expir|utlogg|logg(e|a)s?\s*ut|logget\s*u[td]|sesjon|sessionen|inaktiv|aktivitet|kirjau|istunto|vanhen)/i;
 
   // Text of the "stay logged in" button, in English and the Nordic languages.
   const CONTINUE_TEXT =
@@ -47,6 +47,9 @@ if (!window.__idly) {
     return false;
   }
 
+  // Synthetic input is opt-in per site: bank bot detection (Akamai and the like)
+  // reads mouse and key events, can tell synthetic ones apart (isTrusted: false), and
+  // blocked a whole home network for it in testing. Never make this the default.
   function simulateActivity() {
     const x = 5 + Math.floor(Math.random() * 20);
     const y = 5 + Math.floor(Math.random() * 20);
@@ -63,10 +66,37 @@ if (!window.__idly) {
     window.dispatchEvent(new Event("scroll"));
   }
 
-  function nudge() {
+  // A site's keepalive: a plain GET, sent from the page so it carries the page's own
+  // cookies (Idly never reads them). It's due every KEEPALIVE_MIN minutes (see shared.js;
+  // content scripts can't import it), each time randomised to 70–130% of that, so the
+  // requests never settle into a machine-like rhythm. The first one waits a random
+  // share of the interval too, instead of firing the moment the page loads.
+  const KEEPALIVE_MS = 5 * 60 * 1000;
+  const nextDelay = () => KEEPALIVE_MS * (0.7 + Math.random() * 0.6);
+  let keepaliveDue = Date.now() + Math.random() * KEEPALIVE_MS;
+  async function keepalive(url) {
+    if (!url || Date.now() < keepaliveDue) return;
+    keepaliveDue = Date.now() + nextDelay();
+    let result;
+    try {
+      const res = await fetch(new URL(url, location.origin), { method: "GET", credentials: "include", cache: "no-store" });
+      result = `HTTP ${res.status}`;
+    } catch (e) {
+      result = `failed: ${e.message}`;
+    }
+    if (debug) console.info(`[Idly] keepalive ${url}: ${result}`);
+    chrome.runtime.sendMessage({ type: "idly:keepalive", host: location.hostname, url, result }).catch(() => {});
+  }
+
+  // options: the site's settings from the popup, { simulate?, keepalive? }.
+  function nudge(options = {}) {
     dismissSessionDialogs();
-    simulateActivity();
-    if (debug) console.info(`[Idly] nudge at ${new Date().toLocaleTimeString()} (tab ${document.visibilityState}, focus ${document.hasFocus()})`);
+    if (options.simulate) simulateActivity();
+    keepalive(options.keepalive);
+    if (debug) {
+      const did = [options.simulate && "simulated activity", options.keepalive && "keepalive due check"].filter(Boolean);
+      console.info(`[Idly] nudge at ${new Date().toLocaleTimeString()} (tab ${document.visibilityState}, focus ${document.hasFocus()})${did.length ? `: ${did.join(", ")}` : ""}`);
+    }
   }
 
   // Debug mode is toggled in the popup footer and applies without a reload.
@@ -101,10 +131,10 @@ if (!window.__idly) {
   const state = () => ({ host: location.hostname, visibility: document.visibilityState, focus: document.hasFocus() });
 
   chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
-    if (msg?.type === "idly:nudge") { start(); nudge(); reply(state()); }
+    if (msg?.type === "idly:nudge") { start(); nudge(msg.options); reply(state()); }
     if (msg?.type === "idly:stop") { stop(); reply(state()); }
   });
 
   start();
-  nudge();
+  dismissSessionDialogs();
 }

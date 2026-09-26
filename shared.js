@@ -9,8 +9,12 @@
 export const DEFAULTS = { intervalMin: 1, pageSubdomains: false, debug: false };
 // Per-device state. The list isn't synced because permissions aren't: a synced list
 // would show sites Idly can't access on the other device. "pending" is the entry
-// waiting for the permission prompt (see popup.js addEntry).
-export const LOCAL_DEFAULTS = { sites: [], pending: null };
+// waiting for the permission prompt (see popup.js addEntry). "options" holds per-site
+// settings keyed by entry: { simulate?: true, keepalive?: "/path" }.
+export const LOCAL_DEFAULTS = { sites: [], pending: null, options: {} };
+
+// How often a site's keepalive request is sent, at most.
+export const KEEPALIVE_MIN = 5;
 export const INTERVAL = { min: 0.5, max: 60, step: 0.5 };
 
 export const MESSAGES = {
@@ -21,12 +25,17 @@ export const MESSAGES = {
   replaced: (hosts, entry) => `Replaced ${listJoin(hosts)} with ${entry}.`,
   declined: "Permission was declined.",
   saveFailed: "Couldn't save. Try again.",
+  keepaliveInvalid: "Enter a path such as /api/session, or a full https:// address.",
+  keepaliveHost: (entry) => `The address must be on ${entry}.`,
 };
 
 // A site entry is either an exact host ("bank.com") or a wildcard ("*.bank.com"),
 // which covers bank.com itself and every subdomain.
 export const isWildcard = (entry) => entry.startsWith("*.");
 export const baseOf = (entry) => (isWildcard(entry) ? entry.slice(2) : entry);
+
+// The listed entry that covers host, preferring an exact match over a wildcard.
+export const coveringEntry = (sites, host) => sites.find((e) => e === host) ?? sites.find((e) => covers(e, host));
 
 // Chrome match pattern for an entry, over http and https.
 // Chrome's "*.bank.com" host pattern already includes bank.com itself.
@@ -114,6 +123,25 @@ export function entriesFromOrigins(origins) {
   return [...byEntry]
     .map(([entry, origins]) => ({ entry, origins }))
     .sort((a, b) => baseOf(a.entry).localeCompare(baseOf(b.entry)) || b.entry.localeCompare(a.entry));
+}
+
+// Validates a site's keepalive request: a path on the page's own origin
+// ("/api/session?x=1"), or a full https:// URL on a host the entry covers, so the
+// request stays within what the user listed. Returns { url } (null clears it) or
+// { error }. The request is always a GET: never replay anything that changes state.
+export function parseKeepalive(input, entry) {
+  const s = String(input ?? "").trim();
+  if (!s) return { url: null };
+  if (s.startsWith("/")) {
+    if (s.startsWith("//")) return { error: MESSAGES.keepaliveInvalid };
+    const url = new URL(s, "https://origin.invalid");
+    return { url: url.pathname + url.search };
+  }
+  let url;
+  try { url = new URL(s); } catch { return { error: MESSAGES.keepaliveInvalid }; }
+  if (url.protocol !== "https:") return { error: MESSAGES.keepaliveInvalid };
+  if (!covers(entry, url.hostname)) return { error: MESSAGES.keepaliveHost(entry) };
+  return { url: url.origin + url.pathname + url.search };
 }
 
 // Clamps the nudge interval to a sane range on the 0.5-minute grid.

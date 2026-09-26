@@ -18,7 +18,7 @@ Idly is a Chromium extension that keeps chosen sites (online banking, say) from 
 | `shared.js` | Pure site-entry logic with no browser APIs: `parseInput` (cleaning and validation), `planAdd` (duplicate and overlap rules), `entriesFromOrigins` (granted patterns to entries, for pruning and migration), `covers`, `patternFor`, `stripWww`, `clampInterval`, `DEFAULTS` / `LOCAL_DEFAULTS`, and the user-facing `MESSAGES` |
 | `background.js` | Service worker and **the only writer of the list**. It commits pending entries once their grant exists (`permissions.onAdded`, or an `idly:commit` message when the browser skipped the prompt), removes entries (`idly:remove`), unlists sites the user revoked in the browser (`permissions.onRemoved`), and revokes grants nothing listed needs (`pruneGrants`). Whenever the list changes, `apply` registers `content.js` for listed sites that have access, injects into open tabs, sends `idly:stop` to every other tab, and sets the badge and `autoDiscardable: false` (Memory Saver would otherwise discard a background bank tab, which silences Idly and reloads the tab into a login page). The alarm tick nudges each enabled tab after a random 1–3 s delay. It also swaps the toolbar icon on `{type: "idly:scheme"}`. Changes run one at a time through `serial` |
 | `offscreen.html` / `offscreen.js` | Hidden offscreen document (reason `MATCH_MEDIA`). Service workers have no `matchMedia`, so this page reports light or dark to `background.js` |
-| `content.js` | On a nudge: dismisses session-warning dialogs, then dispatches synthetic mouse, pointer, Shift and scroll events. A `MutationObserver` also dismisses dialogs as soon as they appear. Guarded by `window.__idly` because it can be injected twice |
+| `content.js` | On a nudge: dismisses session-warning dialogs; sends the site's keepalive GET when due (randomised to 70–130% of 5 minutes); and **only if the site opted in** (`simulate`), dispatches synthetic mouse, pointer, Shift and scroll events. A `MutationObserver` also dismisses dialogs as soon as they appear. Guarded by `window.__idly` because it can be injected twice |
 | `popup.html` / `popup.js` | GUI: the This page card, the list of active websites, the add form, the nudge interval |
 | `icons/light/`, `icons/dark/` | Toolbar icons: deep green (design option b) for light toolbars, pale green (option c) for dark ones. The manifest points at `light/` |
 | `design/` | The Claude Design handoff. See "GUI and design" |
@@ -31,7 +31,7 @@ Idly is a Chromium extension that keeps chosen sites (online banking, say) from 
 
 | Storage | Keys | Why |
 |---|---|---|
-| `chrome.storage.local` | `{ sites: string[], pending: string \| null }` | Per device, because permissions don't sync. `background.js` is the only writer of `sites` |
+| `chrome.storage.local` | `{ sites: string[], pending: string \| null, options: { [entry]: { simulate?, keepalive? } } }` | Per device, because permissions don't sync. `background.js` is the only writer of `sites` |
 | `chrome.storage.sync` | `{ intervalMin, pageSubdomains, debug }` | Settings |
 
 A site is active when it's listed **and** Idly has access to it. The popup and background talk through messages (`idly:commit`, `idly:remove`) and storage change events.
@@ -64,6 +64,8 @@ A site is active when it's listed **and** Idly has access to it. The popup and b
 
 - **Only click inside session dialogs.** `dismissSessionDialogs` clicks a button only when it sits inside a dialog-like element *whose text matches `SESSION_TEXT`* and the button's label matches `CONTINUE_TEXT`. This is what stops Idly from clicking "Continue" on a payment confirmation on a banking site. Never widen it to buttons outside dialogs, and never drop the `SESSION_TEXT` check.
 - **Never click logout.** `CONTINUE_TEXT` is anchored (`^`) to the start of the label. Check that new words can't match logout or cancel labels.
+- **No synthetic input by default.** Bank bot detection (Akamai) reads mouse and key events and can tell synthetic ones apart (`isTrusted: false`). In testing, it blocked every Chromium browser on the user's home connection for this. `simulateActivity` runs only for sites whose options set `simulate`. Never make it the default, and keep the warning next to the option.
+- **Keepalive requests are GET only**, restricted by `parseKeepalive` to the page's own origin or an https host the entry covers. They're sent with `fetch` from the content script, so the page's cookies are used without Idly ever reading them. Never replay POST, PUT or DELETE, never read or store cookies or tokens, and keep the interval randomised.
 - **Synthetic keys must be inert.** Only a lone Shift is dispatched. Don't add keys that could type text, submit forms or trigger shortcuts.
 - **`chrome.permissions.request` must run synchronously inside the click or submit handler.** Any `await` before it loses the user gesture and Chrome rejects the request. That's why parsing and `planAdd` are synchronous. See `addEntry` in `popup.js`.
 - **Never rely on code after `chrome.permissions.request` in the popup.** The popup usually closes while the browser shows its prompt, which kills its script. That caused the "granted but not listed" bug in 0.1. The popup writes `pending` *before* the request, and `background.js` commits it. Anything else that must happen after a grant belongs in `background.js`.
@@ -72,7 +74,7 @@ A site is active when it's listed **and** Idly has access to it. The popup and b
 - **Stopping must reach open tabs.** Losing a permission doesn't unload a running content script, so `apply` sends `idly:stop` to every tab that isn't enabled.
 - **Popup element IDs and classes are a contract** with the design:
   - IDs: `current-host`, `current-status`, `current-btn`, `sites`, `add`, `domain`, `subdomains`, `error`, `notice`, `interval`.
-  - Added after the handoff, and not in `design/`: `page-scope`, `page-subdomains`, `page-hint` (the scope option under **Keep me logged in**) `manage` (the footer link to the browser's site-access settings) and `debug` (the debug-logging toggle).
+  - Added after the handoff, and not in `design/`: the per-site Options panel (`li.options`, `.opt-form`, `.tags`),  `page-scope`, `page-subdomains`, `page-hint` (the scope option under **Keep me logged in**) `manage` (the footer link to the browser's site-access settings) and `debug` (the debug-logging toggle).
   - Classes set by the script: `on`, `primary`, `muted`.
   - Classes used only by CSS: `wild`, `scope-all`, `scope-exact`.
 - **Light and dark mode are both required.** Colours are custom properties on `:root`, overridden under `prefers-color-scheme: dark`, and `color-scheme: light dark` keeps native controls themed. All text needs WCAG AA contrast (4.5:1) in both themes. The only change from the design's tokens is `--placeholder`, adjusted for exactly this reason. The header logo and the toolbar icon also switch with the theme.

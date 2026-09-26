@@ -5,7 +5,9 @@
 // sites, and drives a chrome.alarms tick. Alarms keep firing for background tabs,
 // where the page's own setInterval would be throttled to about once a minute or less.
 
-import { DEFAULTS, LOCAL_DEFAULTS, parseInput, planAdd, patternFor, covers, baseOf, entriesFromOrigins } from "./shared.js";
+import {
+  DEFAULTS, LOCAL_DEFAULTS, parseInput, planAdd, patternFor, covers, baseOf, coveringEntry, entriesFromOrigins,
+} from "./shared.js";
 
 const SCRIPT_ID = "idly-content";
 const ALARM = "idly-tick";
@@ -58,6 +60,24 @@ async function commitPending() {
   await chrome.storage.local.set(plan.error ? { pending: null } : { sites: plan.sites, pending: null });
   if (plan.error) log(`not added ${pending}: ${plan.error}`);
   else log(`added ${plan.entry}${plan.replaced.length ? `, replacing ${plan.replaced.join(", ")}` : ""}`);
+}
+
+// Per-site settings from the popup. Empty values are dropped, so a site with no
+// options has no key at all.
+async function setOptions(entry, next) {
+  const { sites, options } = await getLocal();
+  if (!sites.includes(entry)) return;
+  const clean = Object.fromEntries(Object.entries(next).filter(([, v]) => v));
+  const { [entry]: _, ...rest } = options;
+  await chrome.storage.local.set({ options: Object.keys(clean).length ? { ...rest, [entry]: clean } : rest });
+  log(`options for ${entry}: ${JSON.stringify(clean)}`);
+}
+
+// Options of entries that left the list (removed, replaced or revoked) go with them.
+async function pruneOptions() {
+  const { sites, options } = await getLocal();
+  const kept = Object.fromEntries(Object.entries(options).filter(([e]) => sites.includes(e)));
+  if (Object.keys(kept).length !== Object.keys(options).length) await chrome.storage.local.set({ options: kept });
 }
 
 async function removeEntry(entry) {
@@ -177,6 +197,8 @@ chrome.runtime.onMessage.addListener((msg) => {
   if (msg?.type === "idly:commit") serial(commitPending);
   if (msg?.type === "idly:remove") serial(() => removeEntry(msg.entry));
   if (msg?.type === "idly:extended") log(`session warning on ${msg.host}: clicked "${msg.label}"`);
+  if (msg?.type === "idly:keepalive") log(`keepalive on ${msg.host} ${msg.url}: ${msg.result}`);
+  if (msg?.type === "idly:options") serial(() => setOptions(msg.entry, msg.options));
 });
 
 async function startup() {
@@ -205,6 +227,7 @@ chrome.permissions.onRemoved.addListener(() => serial(dropRevoked));
 
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === "local" && changes.sites) {
+    serial(pruneOptions);
     serial(pruneGrants);
     serial(apply);
   }
@@ -216,12 +239,17 @@ chrome.storage.onChanged.addListener((changes, area) => {
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name !== ALARM) return;
   const [min, max] = JITTER_MS;
-  const tabs = await enabledTabs();
+  const sites = await activeSites();
+  const { options } = await getLocal();
+  const tabs = await enabledTabs(sites);
   log(`tick: ${tabs.length} tab(s) to nudge`);
   for (const tab of tabs) {
     const delay = min + Math.random() * (max - min);
+    // tabs.query only returns url for tabs Idly has access to, which these are.
+    const host = tab.url ? new URL(tab.url).hostname : "";
+    const siteOptions = options[coveringEntry(sites, host)] ?? {};
     setTimeout(() => {
-      chrome.tabs.sendMessage(tab.id, { type: "idly:nudge" }).then(
+      chrome.tabs.sendMessage(tab.id, { type: "idly:nudge", options: siteOptions }).then(
         (s) => log(`  nudged ${s?.host ?? "?"} (tab ${tab.id}, +${(delay / 1000).toFixed(1)} s, ${s?.visibility}, focus ${s?.focus})`),
         (e) => log(`  couldn't nudge tab ${tab.id}: ${e.message}`),
       );
