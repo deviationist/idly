@@ -119,7 +119,7 @@ function optionsPanel(entry, opts) {
   const id = `ka-${sites.indexOf(entry)}`;
   li.innerHTML = `
     <label class="check"><input type="checkbox"> Simulate activity</label>
-    <p class="hint warn">Sends fake mouse and key events. Banks' bot protection can block your browser for this, so only use it on sites without it.</p>
+    <p class="hint warn">Sends fake mouse and key events. Sites with bot protection (banks especially) can block your browser for this, so only use it where there's none.</p>
     <label class="opt-label" for="${id}">Keepalive request (GET)</label>
     <form class="opt-form">
       <input id="${id}" type="text" placeholder="/api/session" spellcheck="false" autocapitalize="off">
