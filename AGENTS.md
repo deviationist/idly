@@ -23,6 +23,7 @@ Idly is a Chromium extension that keeps chosen sites (online banking, say) from 
 | `icons/light/`, `icons/dark/` | Toolbar icons: deep green (design option b) for light toolbars, pale green (option c) for dark ones. The manifest points at `light/` |
 | `design/` | The Claude Design handoff. See "GUI and design" |
 | `test/shared.test.mjs` | Unit tests for `shared.js` |
+| `test/patterns.test.mjs` | Checks `SESSION_TEXT` and `CONTINUE_TEXT`, read straight from `content.js`: real-world warnings must match, and logout, close and cancel labels must not |
 | `test/background.test.mjs` | Runs `background.js` against a small fake `chrome.*`, covering add, remove, replace and revoke flows |
 
 **State:** Idly keeps **its own list** of websites, and host permissions only say what Idly may touch. The two differ on purpose:
@@ -63,6 +64,7 @@ A site is active when it's listed **and** Idly has access to it. The popup and b
 ## Invariants: don't break these
 
 - **Only click inside session dialogs.** `dismissSessionDialogs` clicks a button only when it sits inside a dialog-like element *whose text matches `SESSION_TEXT`* and the button's label matches `CONTINUE_TEXT`. This is what stops Idly from clicking "Continue" on a payment confirmation on a banking site. Never widen it to buttons outside dialogs, and never drop the `SESSION_TEXT` check.
+- **Click the innermost match, at most once per 30 seconds.** Some component libraries nest a `<button>` inside another with the same label, and a click only bubbles outward. The cooldown stops a warning that doesn't close from being clicked on every page change.
 - **Never click logout.** `CONTINUE_TEXT` is anchored (`^`) to the start of the label. Check that new words can't match logout or cancel labels.
 - **No synthetic input by default.** Bank bot detection (Akamai) reads mouse and key events and can tell synthetic ones apart (`isTrusted: false`). In testing, it blocked every Chromium browser on the user's home connection for this. `simulateActivity` runs only for sites whose options set `simulate`. Never make it the default, and keep the warning next to the option.
 - **Keepalive requests are GET only**, restricted by `parseKeepalive` to the page's own origin or an https host the entry covers. They're sent with `fetch` from the content script, so the page's cookies are used without Idly ever reading them. Never replay POST, PUT or DELETE, never read or store cookies or tokens, and keep the interval randomised.
@@ -92,10 +94,19 @@ Nothing in `design/` ships or is loaded by the extension. Square popup corners a
 
 ## Adding support for a site
 
-When a site's warning dialog isn't dismissed, get its exact text and button label, then:
+When a site's warning dialog isn't dismissed, get its exact text and button label (see "Capturing a warning" below), then:
 1. Add a distinctive word from the dialog text to `SESSION_TEXT`.
 2. Add the button label to `CONTINUE_TEXT`.
 3. If the dialog isn't `dialog[open]`, `[role=dialog|alertdialog]`, `[aria-modal=true]` or `.modal.show/.in`, extend the selector in `dismissSessionDialogs`.
+
+4. Add the text and label to `test/patterns.test.mjs`, anonymised: generic wording only, never the site's name or class names.
+
+### Capturing a warning
+
+Warnings appear shortly before a logout, often only a minute before it, and real input such as moving the pointer over the page resets the site's timer. So capture without touching the page:
+1. Detach the browser's DevTools into its own window and turn on **Preserve log** in its Console.
+2. Right after loading the page, run a `MutationObserver` in the Console that logs the `outerHTML` of added nodes that are dialog-like or mention logging out.
+3. Keep the pointer away from the window. A changed tab title is often the first sign that the warning is up.
 
 ## Verifying changes
 

@@ -4,11 +4,11 @@ if (!window.__idly) {
 
   // A dialog is treated as a session warning only if its text matches this.
   const SESSION_TEXT =
-    /(log(ged|ging)?\s*(you\s*)?out|sign(ed)?\s*out|session|inactiv|idle|timeout|time\s*out|expir|utlogg|logg(e|a)s?\s*ut|logget\s*u[td]|sesjon|sessionen|inaktiv|aktivitet|kirjau|istunto|vanhen)/i;
+    /(log(ged|ging)?\s*(you\s*)?out|sign(ed)?\s*out|session|inactiv|idle|timeout|time\s*out|expir|utlogg|logg(e|a)s?\s*ut|logget\s*u[td]|logg(er|ar)\s+(deg|dig|dej)\s+u[td]|sesjon|sessionen|inaktiv|aktivitet|kirjau|istunto|vanhen)/i;
 
   // Text of the "stay logged in" button, in English and the Nordic languages.
   const CONTINUE_TEXT =
-    /^(continue|stay|keep|extend|yes|i'?m (still )?here|still here|fortsett|fortsätt|fortsæt|forbli|forlæng|förläng|forleng|förnya|forny|bli innlogget|forbliv|ja|jatka|pysy|kyllä)/i;
+    /^(continue|stay|keep|extend|yes|i'?m (still )?here|still here|fortsett|fortsätt|fortsæt|forbli|forlæng|förläng|forleng|förnya|forny|bli innlogget|forbliv|hold me(g|i) (inn)?logget|hold mig logget|håll mig inloggad|behåll|ja|jatka|pysy|kyllä)/i;
 
   // Collects every match of a selector, also looking inside shadow roots,
   // because banking UIs are often built from web components.
@@ -26,20 +26,31 @@ if (!window.__idly) {
     return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== "hidden";
   };
 
+  // At most one click per CLICK_COOLDOWN_MS: if a click doesn't close the warning
+  // (say the site's handler failed), the observer mustn't keep clicking on every change.
+  const CLICK_COOLDOWN_MS = 30 * 1000;
+  let lastClick = 0;
+
   function dismissSessionDialogs() {
+    if (Date.now() - lastClick < CLICK_COOLDOWN_MS) return false;
     const dialogs = deepQueryAll(
       'dialog[open], [role="dialog"], [role="alertdialog"], [aria-modal="true"], .modal.show, .modal.in'
     ).filter(visible);
 
     for (const dlg of dialogs) {
       if (!SESSION_TEXT.test(dlg.textContent || "")) continue;
-      const buttons = deepQueryAll('button, [role="button"], a, input[type="button"], input[type="submit"]', dlg)
-        .filter(visible);
-      const btn = buttons.find((b) => CONTINUE_TEXT.test((b.innerText || b.value || b.getAttribute("aria-label") || "").trim()));
+      const labelOf = (b) => (b.innerText || b.value || b.getAttribute("aria-label") || "").trim();
+      const matches = deepQueryAll('button, [role="button"], a, input[type="button"], input[type="submit"]', dlg)
+        .filter((b) => visible(b) && CONTINUE_TEXT.test(labelOf(b)));
+      // Click the innermost match. Some component libraries render a <button> inside
+      // another <button> with the same label, and a click only bubbles outward, so
+      // only the innermost one is sure to reach the site's handler.
+      const btn = matches.find((b) => !matches.some((o) => o !== b && b.contains(o)));
       if (btn) {
         const label = (btn.innerText || btn.value || "").trim();
         if (debug) console.info("[Idly] extending session via:", label);
         chrome.runtime.sendMessage({ type: "idly:extended", host: location.hostname, label }).catch(() => {});
+        lastClick = Date.now();
         btn.click();
         return true;
       }
