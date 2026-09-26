@@ -90,7 +90,7 @@ function renderList() {
     const opts = options[entry] ?? {};
     const tags = document.createElement("span");
     tags.className = "tags";
-    tags.textContent = [opts.keepalive && "keepalive", opts.simulate && "simulates"].filter(Boolean).join(" · ");
+    tags.textContent = [opts.keepalive && "keepalive", opts.simulate && "simulates", opts.maxIdleMin && `caps ${opts.maxIdleMin}m`].filter(Boolean).join(" · ");
     const more = button("Options", `Options for ${entry}`, () => {
       openEntry = openEntry === entry ? null : entry;
       renderList();
@@ -126,13 +126,25 @@ function optionsPanel(entry, opts) {
       <button type="submit">Save</button>
     </form>
     <p class="error" role="alert"></p>
-    <p class="hint">Fetched from the page about every ${KEEPALIVE_MIN} minutes, at irregular intervals, with the page's own cookies. Find a request the page already makes in DevTools → Network.</p>`;
-  const [simulate, keepalive] = li.querySelectorAll("input");
+    <p class="hint">Fetched from the page about every ${KEEPALIVE_MIN} minutes, at irregular intervals, with the page's own cookies. Find a request the page already makes in DevTools → Network.</p>
+    <label class="opt-label" for="${id}-cap">Log me out after (minutes idle)</label>
+    <div class="opt-form">
+      <input id="${id}-cap" type="number" min="1" step="1" placeholder="never">
+    </div>
+    <p class="hint">A cap you set: past this much inactivity, Idly stops extending and lets the site log you out. Blank = no cap.</p>`;
+  const [simulate, keepalive, cap] = li.querySelectorAll("input");
   const error = li.querySelector(".error");
   simulate.checked = !!opts.simulate;
   keepalive.value = opts.keepalive ?? "";
+  cap.value = opts.maxIdleMin ?? "";
   const save = (next) => chrome.runtime.sendMessage({ type: "idly:options", entry, options: { ...opts, ...next } });
   simulate.onchange = () => save({ simulate: simulate.checked });
+  cap.onchange = () => {
+    const n = Math.floor(Number(cap.value));
+    const valid = Number.isFinite(n) && n >= 1;
+    cap.value = valid ? n : "";
+    save({ maxIdleMin: valid ? n : undefined });
+  };
   li.querySelector("form").onsubmit = (e) => {
     e.preventDefault();
     const parsed = parseKeepalive(keepalive.value, entry);

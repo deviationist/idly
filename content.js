@@ -11,7 +11,12 @@ if (!window.__idly) {
   // own synthetic activity never makes the page look used. This is the main guard: a
   // payment or "save changes?" dialog appears right after a click, when idle is ~0.
   let lastInput = Date.now();
-  const noteInput = (e) => { if (e.isTrusted) lastInput = Date.now(); };
+  // The current site's options, refreshed on each nudge (see the message handler).
+  // maxIdleMin, when set, is a self-imposed logout cap: Idly stops extending the
+  // session once you've been idle that long, so an unattended tab still logs out.
+  let siteOptions = {};
+  let pastCapLogged = false;
+  const noteInput = (e) => { if (e.isTrusted) { lastInput = Date.now(); pastCapLogged = false; } };
   for (const type of ["pointerdown", "pointermove", "keydown", "wheel", "touchstart", "mousedown"]) {
     addEventListener(type, noteInput, { capture: true, passive: true });
   }
@@ -64,6 +69,18 @@ if (!window.__idly) {
 
   function dismissSessionDialogs() {
     if (clickPending || Date.now() - lastClick < CLICK_COOLDOWN_MS) return false;
+    const idleMs = Date.now() - lastInput;
+
+    // Your own logout cap: past it, stop extending and let the site log you out.
+    const capMs = Number(siteOptions.maxIdleMin) * 60 * 1000;
+    if (capMs && idleMs >= capMs) {
+      if (debug && !pastCapLogged) {
+        console.info(`[Idly] past your ${siteOptions.maxIdleMin}-min inactivity cap; letting the session log out`);
+        pastCapLogged = true;
+      }
+      return false;
+    }
+
     const dialogs = deepQueryAll(
       'dialog[open], [role="dialog"], [role="alertdialog"], [aria-modal="true"], .modal.show, .modal.in'
     ).filter(visible);
@@ -75,7 +92,7 @@ if (!window.__idly) {
 
       const buttonEls = deepQueryAll(BUTTON_SELECTOR, dlg).filter(visible);
       const { index, reason } = decide({
-        idleMs: Date.now() - lastInput,
+        idleMs,
         dialogLike: true,
         text,
         hints: hintsFor(dlg),
@@ -198,7 +215,7 @@ if (!window.__idly) {
   const state = () => ({ host: location.hostname, visibility: document.visibilityState, focus: document.hasFocus() });
 
   chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
-    if (msg?.type === "idly:nudge") { start(); nudge(msg.options); reply(state()); }
+    if (msg?.type === "idly:nudge") { siteOptions = msg.options || {}; start(); nudge(msg.options); reply(state()); }
     if (msg?.type === "idly:stop") { stop(); reply(state()); }
   });
 
