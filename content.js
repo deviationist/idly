@@ -27,7 +27,7 @@ if (!window.__idly) {
   }
 
   // Collects every match of a selector, also looking inside shadow roots,
-  // because banking UIs are often built from web components.
+  // because these dialogs are often built from web components.
   function deepQueryAll(selector, root = document) {
     const out = [...root.querySelectorAll(selector)];
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
@@ -136,7 +136,7 @@ if (!window.__idly) {
     return false;
   }
 
-  // Synthetic input is opt-in per site: bank bot detection (Akamai and the like)
+  // Synthetic input is opt-in per site: some sites' bot detection (Akamai and the like)
   // reads mouse and key events, can tell synthetic ones apart (isTrusted: false), and
   // blocked a whole home network for it in testing. Never make this the default.
   function simulateActivity() {

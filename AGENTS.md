@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Idly is a Chromium extension that keeps chosen sites (online banking, say) from logging the user out for inactivity. See `README.md` for what it does from the user's side.
+Idly is a Chromium extension that keeps chosen sites from logging the user out for inactivity (an admin panel, dashboard, webmail or bank with a short idle timeout). See `README.md` for what it does from the user's side.
 
 ## Stack and ground rules
 
@@ -16,7 +16,7 @@ Idly is a Chromium extension that keeps chosen sites (online banking, say) from 
 |---|---|
 | `manifest.json` | Permissions: `storage`, `alarms`, `scripting`, `activeTab`, `offscreen`. Host access is an **optional** `*://*/*`, granted per entry at runtime |
 | `shared.js` | Pure site-entry logic with no browser APIs: `parseInput` (cleaning and validation), `planAdd` (duplicate and overlap rules), `entriesFromOrigins` (granted patterns to entries, for pruning and migration), `covers`, `patternFor`, `stripWww`, `clampInterval`, `DEFAULTS` / `LOCAL_DEFAULTS`, and the user-facing `MESSAGES` |
-| `background.js` | Service worker and **the only writer of the list**. It commits pending entries once their grant exists (`permissions.onAdded`, or an `idly:commit` message when the browser skipped the prompt), removes entries (`idly:remove`), unlists sites the user revoked in the browser (`permissions.onRemoved`), and revokes grants nothing listed needs (`pruneGrants`). Whenever the list changes, `apply` registers `content.js` for listed sites that have access, injects into open tabs, sends `idly:stop` to every other tab, and sets the badge and `autoDiscardable: false` (Memory Saver would otherwise discard a background bank tab, which silences Idly and reloads the tab into a login page). The alarm tick nudges each enabled tab (via `nudgeTabs`) after a random 1–3 s delay, and a change to a site's options nudges immediately so a new cap/keepalive/simulate applies without waiting for the next tick. It also swaps the toolbar icon on `{type: "idly:scheme"}`. Changes run one at a time through `serial` |
+| `background.js` | Service worker and **the only writer of the list**. It commits pending entries once their grant exists (`permissions.onAdded`, or an `idly:commit` message when the browser skipped the prompt), removes entries (`idly:remove`), unlists sites the user revoked in the browser (`permissions.onRemoved`), and revokes grants nothing listed needs (`pruneGrants`). Whenever the list changes, `apply` registers `content.js` for listed sites that have access, injects into open tabs, sends `idly:stop` to every other tab, and sets the badge and `autoDiscardable: false` (Memory Saver would otherwise discard a background tab, which silences Idly and reloads the tab into a login page). The alarm tick nudges each enabled tab (via `nudgeTabs`) after a random 1–3 s delay, and a change to a site's options nudges immediately so a new cap/keepalive/simulate applies without waiting for the next tick. It also swaps the toolbar icon on `{type: "idly:scheme"}`. Changes run one at a time through `serial` |
 | `offscreen.html` / `offscreen.js` | Hidden offscreen document (reason `MATCH_MEDIA`). Service workers have no `matchMedia`, so this page reports light or dark to `background.js` |
 | `words.js` | Data only: per-language word lists (session / stay / leave / dismiss) and English class-name hints. Sets `globalThis.IdlyWords` / `IdlyHints`. Edit freely; no logic |
 | `detect.js` | Pure decision logic (`globalThis.IdlyDetect.decide`): given plain facts about a dialog, returns which button to click, or null with a reason. Idle-gated and evidence-based (see below). Runs under Node in tests |
@@ -69,7 +69,7 @@ A site is active when it's listed **and** Idly has access to it. The popup and b
 - **Act only on real evidence.** Beyond looking like a dialog, `decide` needs at least one of: a ticking countdown, an English class/id hint, or session wording. Payment/consent dialogs have none.
 - **Never click leave/dismiss buttons.** `classify` marks log-out and close/cancel labels and excludes them; a "stay" label is clicked, else the single remaining unknown button, else nothing. `leave` matches anywhere in a label so "Yes, log me out" is a leave, not a stay.
 - **Click the innermost match, at most once per 30 seconds, after a 50–500 ms reaction delay.** Some component libraries nest a `<button>` inside another with the same label, and a click only bubbles outward. The cooldown (and a `clickPending` flag while a delayed click is scheduled) stops a warning that doesn't close from being clicked on every page change. The delay is a small human-reaction pause, not evasion; before the delayed click fires it re-checks the button is still connected and visible.
-- **No synthetic input by default.** Bank bot detection (Akamai) reads mouse and key events and can tell synthetic ones apart (`isTrusted: false`). In testing, it blocked every Chromium browser on the user's home connection for this. `simulateActivity` runs only for sites whose options set `simulate`. Never make it the default, and keep the warning next to the option.
+- **No synthetic input by default.** Some sites' bot detection (Akamai and the like) reads mouse and key events and can tell synthetic ones apart (`isTrusted: false`). In testing, a bank's did this and blocked every Chromium browser on the user's home connection. `simulateActivity` runs only for sites whose options set `simulate`. Never make it the default, and keep the warning next to the option.
 - **Keepalive requests are GET only**, restricted by `parseKeepalive` to the page's own origin or an https host the entry covers. They're sent with `fetch` from the content script, so the page's cookies are used without Idly ever reading them. Never replay POST, PUT or DELETE, never read or store cookies or tokens, and keep the interval randomised.
 - **Synthetic keys must be inert.** Only a lone Shift is dispatched. Don't add keys that could type text, submit forms or trigger shortcuts.
 - **`chrome.permissions.request` must run synchronously inside the click or submit handler.** Any `await` before it loses the user gesture and Chrome rejects the request. That's why parsing and `planAdd` are synchronous. See `addEntry` in `popup.js`.
@@ -93,7 +93,7 @@ A site is active when it's listed **and** Idly has access to it. The popup and b
 - `design/popup.html` is the popup exactly as delivered. The shipped `popup.html` differs in the placeholder contrast, the theme-switching header logo, the scope option under **Keep me logged in** and the **Manage site access** footer link.
 - `design/icons/` holds the icon sources (SVG and PNG, options a/b/c and mono).
 
-Nothing in `design/` ships or is loaded by the extension. Square popup corners are accepted. The browser draws the popup frame, and a transparent page background doesn't help (tested: the browser paints an opaque background behind it). The rounded card in the mockups is only presentation. The only known workaround is a fake popup injected into the web page with a content script, and it was rejected: it would draw our UI inside bank pages, can't appear on browser pages, and would need broader permissions.
+Nothing in `design/` ships or is loaded by the extension. Square popup corners are accepted. The browser draws the popup frame, and a transparent page background doesn't help (tested: the browser paints an opaque background behind it). The rounded card in the mockups is only presentation. The only known workaround is a fake popup injected into the web page with a content script, and it was rejected: it would draw our UI inside third-party pages, can't appear on browser pages, and would need broader permissions.
 
 ## Adding support for a site or language
 
@@ -103,7 +103,7 @@ Most sites need no code, only words. When a warning isn't dismissed, capture it 
 3. If the dialog isn't matched at all, extend the dialog selector in `dismissSessionDialogs` (`content.js`).
 4. Add the text and label to `test/detect.test.mjs`, anonymised: generic wording only, never the site's name or class names.
 
-Prefer widening the language data over per-site code: it helps every site and keeps the repo free of any one bank's identifiers.
+Prefer widening the language data over per-site code: it helps every site and keeps the repo free of any one site's identifiers.
 
 ### Capturing a warning
 

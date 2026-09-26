@@ -6,7 +6,7 @@ A Chromium extension (Manifest V3, vanilla JS, no build step) that stops chosen 
 
 1. Open `chrome://extensions` and turn on **Developer mode**.
 2. Click **Load unpacked** and choose this folder.
-3. Pin Idly, open your bank, click the icon, then click **Keep me logged in**.
+3. Pin Idly, open a site you want to stay signed in to, click the icon, then click **Keep me logged in**.
 
 ## How it works
 
@@ -19,10 +19,10 @@ Idly refuses addresses without a TLD, IP addresses and duplicates. If a wildcard
 On each site in your list, Idly does the following:
 
 - **Clicks session warnings.** A `MutationObserver` watches for dialogs, including ones inside shadow DOM. Idly clicks a warning's "stay logged in" button only when: you've had no real activity for at least a minute, it looks like a dialog, and there's a real sign of a timeout (a ticking countdown, a timeout-related class name, or wording in one of ten languages). It never clicks log-out, close or cancel, and never touches a dialog you'd see while using the page, such as a payment confirmation.
-- **Keepalive request (optional, per site).** Under **Options** next to a site, you can give a GET request the site's own page already makes, such as `/api/session`. Idly sends it from the page about every 5 minutes, at irregular intervals (3½–6½ minutes), so the session on the bank's server stays alive. It's always a GET, only to that site, and Idly never reads your cookies.
-- **Simulated activity (optional, per site, risky).** Also under **Options**, and off by default. Idly sends mouse and key events so the page's idle timer keeps resetting. **Don't use it on banks.** Their bot detection can tell the events are synthetic and may block your browser. In testing, that blocked every Chromium browser on a home connection for a while.
+- **Keepalive request (optional, per site).** Under **Options** next to a site, you can give a GET request the site's own page already makes, such as `/api/session`. Idly sends it from the page about every 5 minutes, at irregular intervals (3½–6½ minutes), so the session on the site's server stays alive. It's always a GET, only to that site, and Idly never reads your cookies.
+- **Simulated activity (optional, per site, risky).** Also under **Options**, and off by default. Idly sends mouse and key events so the page's idle timer keeps resetting. **Avoid it on sites with bot protection** (banks especially). Their bot detection can tell the events are synthetic and may block your browser. In testing, that blocked every Chromium browser on a home connection for a while.
 - **Logout cap (optional, per site).** Under **Options**, "Log me out after (minutes idle)". Since Idly defeats the site's own auto-logout, this keeps a cap of your own: once you've been idle that long, Idly stops extending and the site logs you out on its next timeout. Measured from your last real interaction, so using the site resets it. Blank means no cap.
-- **No tab discarding.** Tabs on your sites are marked non-discardable, so the browser's memory saver doesn't put the bank tab to sleep while you work in other tabs.
+- **No tab discarding.** Tabs on your sites are marked non-discardable, so the browser's memory saver doesn't put the tab to sleep while you work in other tabs.
 
 A tick every *N* minutes (1 by default, from `chrome.alarms`, which keeps firing in background tabs) drives all of this, and each tab's tick comes after a random 1–3 second delay.
 
@@ -41,7 +41,9 @@ Tick **Debug logging** in the popup footer to watch Idly work. It's off by defau
 
 ## What it's for
 
-Most sites keep you logged in on their own or have generous timeouts, so they need nothing. Idly is for sites with an **aggressive idle-logout** — notably EU/EEA online banking, where PSD2 requires the bank to end an online session after about **5 minutes** of inactivity. That limit is enforced on the bank's **server**, so Idly can't quietly suppress it; instead it clicks the bank's own "stay logged in" warning when it appears, which is what tells the server you're still there. (In testing, one bank was the strict case; several others stayed logged in without any help.)
+Idly is site-agnostic: it works on anything with an **aggressive idle-logout** — an admin panel, a cloud dashboard, webmail, an intranet, a router's web UI, or online banking. Most sites keep you logged in on their own or have generous timeouts and need nothing, so Idly is for the ones that sign you out after just a few idle minutes.
+
+Where a site enforces the timeout on its **server** (EU/EEA banking must, under PSD2, after about 5 minutes), Idly can't quietly suppress it; instead it clicks the site's own "stay logged in" warning when it appears, which is what tells the server you're still there. (Banks were the strict case used in testing; several other sites stayed logged in without any help.)
 
 ## Limits
 

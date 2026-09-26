@@ -111,7 +111,7 @@ function button(text, label, onclick) {
   return b;
 }
 
-// Per-site settings. Synthetic input is off by default because bank bot detection
+// Per-site settings. Synthetic input is off by default because some sites' bot detection
 // can block the whole browser for it (see content.js simulateActivity).
 function optionsPanel(entry, opts) {
   const li = document.createElement("li");
