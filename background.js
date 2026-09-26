@@ -234,17 +234,20 @@ chrome.storage.onChanged.addListener((changes, area) => {
     serial(apply);
   }
   if (area === "sync" && changes.intervalMin) syncAlarm();
+  if (area === "local" && changes.options) nudgeTabs({ jitter: false });
   if (area === "sync" && changes.debug) debug = Promise.resolve(changes.debug.newValue);
 });
 
 // Each tab gets its nudge after a random 1–3 s delay, so ticks aren't perfectly periodic.
-chrome.alarms.onAlarm.addListener(async (alarm) => {
-  if (alarm.name !== ALARM) return;
-  const [min, max] = JITTER_MS;
+// Sends a nudge to every enabled tab, carrying that site's current options. The
+// alarm jitters each send by 1-3 s; an options change nudges immediately so a
+// changed cap/keepalive/simulate applies without waiting for the next tick.
+async function nudgeTabs({ jitter } = { jitter: true }) {
+  const [min, max] = jitter ? JITTER_MS : [0, 0];
   const sites = await activeSites();
   const { options } = await getLocal();
   const tabs = await enabledTabs(sites);
-  log(`tick: ${tabs.length} tab(s) to nudge`);
+  log(`${jitter ? "tick" : "refresh"}: ${tabs.length} tab(s) to nudge`);
   for (const tab of tabs) {
     const delay = min + Math.random() * (max - min);
     // tabs.query only returns url for tabs Idly has access to, which these are.
@@ -257,6 +260,10 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
       );
     }, delay);
   }
+}
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === ALARM) nudgeTabs({ jitter: true });
 });
 
 chrome.tabs.onUpdated.addListener((_id, info) => {
