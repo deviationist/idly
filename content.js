@@ -2,13 +2,19 @@
 if (!window.__idly) {
   window.__idly = true;
 
-  // A dialog is treated as a session warning only if its text matches this.
-  const SESSION_TEXT =
-    /(log(ged|ging)?\s*(you\s*)?out|sign(ed)?\s*out|session|inactiv|idle|timeout|time\s*out|expir|utlogg|logg(e|a)s?\s*ut|logget\s*u[td]|logg(er|ar)\s+(deg|dig|dej)\s+u[td]|sesjon|sessionen|inaktiv|aktivitet|kirjau|istunto|vanhen)/i;
+  // The decision logic and word lists live in detect.js / words.js, injected before
+  // this script (see background.js). IdlyDetect.decide takes plain facts and says
+  // which button to click, so it can be unit-tested without a browser.
+  const { decide, countingDown } = globalThis.IdlyDetect;
 
-  // Text of the "stay logged in" button, in English and the Nordic languages.
-  const CONTINUE_TEXT =
-    /^(continue|stay|keep|extend|yes|i'?m (still )?here|still here|fortsett|fortsätt|fortsæt|forbli|forlæng|förläng|forleng|förnya|forny|bli innlogget|forbliv|hold me(g|i) (inn)?logget|hold mig logget|håll mig inloggad|behåll|ja|jatka|pysy|kyllä)/i;
+  // How long since the user's last *real* input. Only trusted events count, so Idly's
+  // own synthetic activity never makes the page look used. This is the main guard: a
+  // payment or "save changes?" dialog appears right after a click, when idle is ~0.
+  let lastInput = Date.now();
+  const noteInput = (e) => { if (e.isTrusted) lastInput = Date.now(); };
+  for (const type of ["pointerdown", "pointermove", "keydown", "wheel", "touchstart", "mousedown"]) {
+    addEventListener(type, noteInput, { capture: true, passive: true });
+  }
 
   // Collects every match of a selector, also looking inside shadow roots,
   // because banking UIs are often built from web components.
@@ -26,6 +32,26 @@ if (!window.__idly) {
     return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== "hidden";
   };
 
+  const labelOf = (b) => (b.innerText || b.value || b.getAttribute("aria-label") || "").trim();
+  const BUTTON_SELECTOR = 'button, [role="button"], a[href], input[type="button"], input[type="submit"]';
+
+  // The class/id/label attributes of a dialog and its ancestors, across shadow
+  // boundaries. Developers name these in English (e.g. "session-timeout-modal"),
+  // so they're a language-independent hint that a dialog is a timeout warning.
+  function hintsFor(el) {
+    const parts = [];
+    for (let n = el; n; n = n.parentElement ?? n.getRootNode().host) {
+      for (const attr of ["class", "id", "data-testid", "aria-label"]) {
+        const v = n.getAttribute?.(attr);
+        if (v) parts.push(v);
+      }
+    }
+    return parts.join(" ");
+  }
+
+  // Remembers each dialog's last text so a shrinking number reads as a countdown.
+  const lastText = new WeakMap();
+
   // At most one click per CLICK_COOLDOWN_MS: if a click doesn't close the warning
   // (say the site's handler failed), the observer mustn't keep clicking on every change.
   const CLICK_COOLDOWN_MS = 30 * 1000;
@@ -38,22 +64,37 @@ if (!window.__idly) {
     ).filter(visible);
 
     for (const dlg of dialogs) {
-      if (!SESSION_TEXT.test(dlg.textContent || "")) continue;
-      const labelOf = (b) => (b.innerText || b.value || b.getAttribute("aria-label") || "").trim();
-      const matches = deepQueryAll('button, [role="button"], a, input[type="button"], input[type="submit"]', dlg)
-        .filter((b) => visible(b) && CONTINUE_TEXT.test(labelOf(b)));
-      // Click the innermost match. Some component libraries render a <button> inside
-      // another <button> with the same label, and a click only bubbles outward, so
-      // only the innermost one is sure to reach the site's handler.
-      const btn = matches.find((b) => !matches.some((o) => o !== b && b.contains(o)));
-      if (btn) {
-        const label = (btn.innerText || btn.value || "").trim();
-        if (debug) console.info("[Idly] extending session via:", label);
-        chrome.runtime.sendMessage({ type: "idly:extended", host: location.hostname, label }).catch(() => {});
-        lastClick = Date.now();
-        btn.click();
-        return true;
+      const text = dlg.textContent || "";
+      const previous = lastText.get(dlg);
+      lastText.set(dlg, text);
+
+      const buttonEls = deepQueryAll(BUTTON_SELECTOR, dlg).filter(visible);
+      const { index, reason } = decide({
+        idleMs: Date.now() - lastInput,
+        dialogLike: true,
+        text,
+        hints: hintsFor(dlg),
+        countdown: previous !== undefined && countingDown(previous, text),
+        buttons: buttonEls.map(labelOf),
+      });
+      if (index === null) {
+        if (debug && reason !== "user was active in the last minute") console.debug("[Idly] left a dialog alone:", reason);
+        continue;
       }
+
+      // Some component libraries render a <button> inside another <button> with the
+      // same label, and a click only bubbles outward, so click the innermost element.
+      let btn = buttonEls[index];
+      for (let changed = true; changed; ) {
+        changed = false;
+        for (const b of buttonEls) if (b !== btn && btn.contains(b)) { btn = b; changed = true; }
+      }
+      const label = labelOf(btn);
+      if (debug) console.info(`[Idly] extending session via "${label}" (${reason})`);
+      chrome.runtime.sendMessage({ type: "idly:extended", host: location.hostname, label }).catch(() => {});
+      lastClick = Date.now();
+      btn.click();
+      return true;
     }
     return false;
   }

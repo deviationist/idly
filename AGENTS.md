@@ -18,12 +18,14 @@ Idly is a Chromium extension that keeps chosen sites (online banking, say) from 
 | `shared.js` | Pure site-entry logic with no browser APIs: `parseInput` (cleaning and validation), `planAdd` (duplicate and overlap rules), `entriesFromOrigins` (granted patterns to entries, for pruning and migration), `covers`, `patternFor`, `stripWww`, `clampInterval`, `DEFAULTS` / `LOCAL_DEFAULTS`, and the user-facing `MESSAGES` |
 | `background.js` | Service worker and **the only writer of the list**. It commits pending entries once their grant exists (`permissions.onAdded`, or an `idly:commit` message when the browser skipped the prompt), removes entries (`idly:remove`), unlists sites the user revoked in the browser (`permissions.onRemoved`), and revokes grants nothing listed needs (`pruneGrants`). Whenever the list changes, `apply` registers `content.js` for listed sites that have access, injects into open tabs, sends `idly:stop` to every other tab, and sets the badge and `autoDiscardable: false` (Memory Saver would otherwise discard a background bank tab, which silences Idly and reloads the tab into a login page). The alarm tick nudges each enabled tab after a random 1–3 s delay. It also swaps the toolbar icon on `{type: "idly:scheme"}`. Changes run one at a time through `serial` |
 | `offscreen.html` / `offscreen.js` | Hidden offscreen document (reason `MATCH_MEDIA`). Service workers have no `matchMedia`, so this page reports light or dark to `background.js` |
-| `content.js` | On a nudge: dismisses session-warning dialogs; sends the site's keepalive GET when due (randomised to 70–130% of 5 minutes); and **only if the site opted in** (`simulate`), dispatches synthetic mouse, pointer, Shift and scroll events. A `MutationObserver` also dismisses dialogs as soon as they appear. Guarded by `window.__idly` because it can be injected twice |
+| `words.js` | Data only: per-language word lists (session / stay / leave / dismiss) and English class-name hints. Sets `globalThis.IdlyWords` / `IdlyHints`. Edit freely; no logic |
+| `detect.js` | Pure decision logic (`globalThis.IdlyDetect.decide`): given plain facts about a dialog, returns which button to click, or null with a reason. Idle-gated and evidence-based (see below). Runs under Node in tests |
+| `content.js` | Injected as `words.js`, `detect.js`, `content.js` in that order. On a nudge: gathers dialog facts and lets `decide` pick the button to click; sends the site's keepalive GET when due (randomised to 70–130% of 5 minutes); and **only if the site opted in** (`simulate`), dispatches synthetic mouse, pointer, Shift and scroll events. A `MutationObserver` also dismisses dialogs as soon as they appear. Guarded by `window.__idly` because it can be injected twice |
 | `popup.html` / `popup.js` | GUI: the This page card, the list of active websites, the add form, the nudge interval |
 | `icons/light/`, `icons/dark/` | Toolbar icons: deep green (design option b) for light toolbars, pale green (option c) for dark ones. The manifest points at `light/` |
 | `design/` | The Claude Design handoff. See "GUI and design" |
 | `test/shared.test.mjs` | Unit tests for `shared.js` |
-| `test/patterns.test.mjs` | Checks `SESSION_TEXT` and `CONTINUE_TEXT`, read straight from `content.js`: real-world warnings must match, and logout, close and cancel labels must not |
+| `test/detect.test.mjs` | Runs `detect.js` against real-world (anonymised) and decoy dialogs: idle-gating, evidence, button choice, and that logout/close/cancel/payment are never clicked |
 | `test/background.test.mjs` | Runs `background.js` against a small fake `chrome.*`, covering add, remove, replace and revoke flows |
 
 **State:** Idly keeps **its own list** of websites, and host permissions only say what Idly may touch. The two differ on purpose:
@@ -63,9 +65,10 @@ A site is active when it's listed **and** Idly has access to it. The popup and b
 
 ## Invariants: don't break these
 
-- **Only click inside session dialogs.** `dismissSessionDialogs` clicks a button only when it sits inside a dialog-like element *whose text matches `SESSION_TEXT`* and the button's label matches `CONTINUE_TEXT`. This is what stops Idly from clicking "Continue" on a payment confirmation on a banking site. Never widen it to buttons outside dialogs, and never drop the `SESSION_TEXT` check.
+- **Idle-gating is the core safety guard.** `decide` acts only when the user has had no *trusted* input for `MIN_IDLE_MS` (60 s). A payment or "save changes?" dialog appears right after a click, so it fails this check and is never touched. Idly's own synthetic events are `isTrusted: false` and never reset the idle clock. Never weaken this.
+- **Act only on real evidence.** Beyond looking like a dialog, `decide` needs at least one of: a ticking countdown, an English class/id hint, or session wording. Payment/consent dialogs have none.
+- **Never click leave/dismiss buttons.** `classify` marks log-out and close/cancel labels and excludes them; a "stay" label is clicked, else the single remaining unknown button, else nothing. `leave` matches anywhere in a label so "Yes, log me out" is a leave, not a stay.
 - **Click the innermost match, at most once per 30 seconds.** Some component libraries nest a `<button>` inside another with the same label, and a click only bubbles outward. The cooldown stops a warning that doesn't close from being clicked on every page change.
-- **Never click logout.** `CONTINUE_TEXT` is anchored (`^`) to the start of the label. Check that new words can't match logout or cancel labels.
 - **No synthetic input by default.** Bank bot detection (Akamai) reads mouse and key events and can tell synthetic ones apart (`isTrusted: false`). In testing, it blocked every Chromium browser on the user's home connection for this. `simulateActivity` runs only for sites whose options set `simulate`. Never make it the default, and keep the warning next to the option.
 - **Keepalive requests are GET only**, restricted by `parseKeepalive` to the page's own origin or an https host the entry covers. They're sent with `fetch` from the content script, so the page's cookies are used without Idly ever reading them. Never replay POST, PUT or DELETE, never read or store cookies or tokens, and keep the interval randomised.
 - **Synthetic keys must be inert.** Only a lone Shift is dispatched. Don't add keys that could type text, submit forms or trigger shortcuts.
@@ -92,14 +95,15 @@ A site is active when it's listed **and** Idly has access to it. The popup and b
 
 Nothing in `design/` ships or is loaded by the extension. Square popup corners are accepted. The browser draws the popup frame, and a transparent page background doesn't help (tested: the browser paints an opaque background behind it). The rounded card in the mockups is only presentation. The only known workaround is a fake popup injected into the web page with a content script, and it was rejected: it would draw our UI inside bank pages, can't appear on browser pages, and would need broader permissions.
 
-## Adding support for a site
+## Adding support for a site or language
 
-When a site's warning dialog isn't dismissed, get its exact text and button label (see "Capturing a warning" below), then:
-1. Add a distinctive word from the dialog text to `SESSION_TEXT`.
-2. Add the button label to `CONTINUE_TEXT`.
-3. If the dialog isn't `dialog[open]`, `[role=dialog|alertdialog]`, `[aria-modal=true]` or `.modal.show/.in`, extend the selector in `dismissSessionDialogs`.
+Most sites need no code, only words. When a warning isn't dismissed, capture it (below), then edit `words.js`:
+1. Add the warning's distinctive word(s) to that language's `session`.
+2. Add the button label to `stay`; add a matching log-out label to `leave` if one isn't covered.
+3. If the dialog isn't matched at all, extend the dialog selector in `dismissSessionDialogs` (`content.js`).
+4. Add the text and label to `test/detect.test.mjs`, anonymised: generic wording only, never the site's name or class names.
 
-4. Add the text and label to `test/patterns.test.mjs`, anonymised: generic wording only, never the site's name or class names.
+Prefer widening the language data over per-site code: it helps every site and keeps the repo free of any one bank's identifiers.
 
 ### Capturing a warning
 

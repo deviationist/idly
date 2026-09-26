@@ -120,7 +120,7 @@ async function syncRegistration(sites) {
   if (!sites.length) return;
   await chrome.scripting.registerContentScripts([{
     id: SCRIPT_ID,
-    js: ["content.js"],
+    js: ["words.js", "detect.js", "content.js"],
     matches: sites.map(patternFor),
     runAt: "document_idle",
     allFrames: true,
@@ -167,7 +167,7 @@ async function apply() {
   for (const t of all) {
     if (on.has(t.id)) {
       // Inject into tabs that were already open when the site was added.
-      chrome.scripting.executeScript({ target: { tabId: t.id, allFrames: true }, files: ["content.js"] }).catch(() => {});
+      chrome.scripting.executeScript({ target: { tabId: t.id, allFrames: true }, files: ["words.js", "detect.js", "content.js"] }).catch(() => {});
     } else {
       // Only tabs still running content.js answer, so this logs just real stops.
       chrome.tabs.sendMessage(t.id, { type: "idly:stop" })
