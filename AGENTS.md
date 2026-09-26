@@ -20,7 +20,7 @@ Idly is a Chromium extension that keeps chosen sites (online banking, say) from 
 | `offscreen.html` / `offscreen.js` | Hidden offscreen document (reason `MATCH_MEDIA`). Service workers have no `matchMedia`, so this page reports light or dark to `background.js` |
 | `words.js` | Data only: per-language word lists (session / stay / leave / dismiss) and English class-name hints. Sets `globalThis.IdlyWords` / `IdlyHints`. Edit freely; no logic |
 | `detect.js` | Pure decision logic (`globalThis.IdlyDetect.decide`): given plain facts about a dialog, returns which button to click, or null with a reason. Idle-gated and evidence-based (see below). Runs under Node in tests |
-| `content.js` | Injected as `words.js`, `detect.js`, `content.js` in that order. On a nudge: gathers dialog facts and lets `decide` pick the button to click; sends the site's keepalive GET when due (randomised to 70–130% of 5 minutes); and **only if the site opted in** (`simulate`), dispatches synthetic mouse, pointer, Shift and scroll events. A `MutationObserver` also dismisses dialogs as soon as they appear. Guarded by `window.__idly` because it can be injected twice |
+| `content.js` | Injected as `words.js`, `detect.js`, `content.js` in that order. On a nudge: gathers dialog facts and lets `decide` pick the button to click; sends the site's keepalive GET when due (randomised to 70–130% of 5 minutes); and **only if the site opted in** (`simulate`), dispatches synthetic mouse, pointer, Shift and scroll events. A site's `maxIdleMin` is a self-imposed logout cap: past that much idle, `dismissSessionDialogs` stops clicking so the site logs you out. A `MutationObserver` also dismisses dialogs as soon as they appear. Guarded by `window.__idly` because it can be injected twice |
 | `popup.html` / `popup.js` | GUI: the This page card, the list of active websites, the add form, the nudge interval |
 | `icons/light/`, `icons/dark/` | Toolbar icons: deep green (design option b) for light toolbars, pale green (option c) for dark ones. The manifest points at `light/` |
 | `design/` | The Claude Design handoff. See "GUI and design" |
@@ -34,7 +34,7 @@ Idly is a Chromium extension that keeps chosen sites (online banking, say) from 
 
 | Storage | Keys | Why |
 |---|---|---|
-| `chrome.storage.local` | `{ sites: string[], pending: string \| null, options: { [entry]: { simulate?, keepalive? } } }` | Per device, because permissions don't sync. `background.js` is the only writer of `sites` |
+| `chrome.storage.local` | `{ sites: string[], pending: string \| null, options: { [entry]: { simulate?, keepalive?, maxIdleMin? } } }` | Per device, because permissions don't sync. `background.js` is the only writer of `sites` |
 | `chrome.storage.sync` | `{ intervalMin, pageSubdomains, debug }` | Settings |
 
 A site is active when it's listed **and** Idly has access to it. The popup and background talk through messages (`idly:commit`, `idly:remove`) and storage change events.
