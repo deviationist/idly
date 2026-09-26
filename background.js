@@ -11,6 +11,13 @@ const SCRIPT_ID = "idly-content";
 const ALARM = "idly-tick";
 const JITTER_MS = [1000, 3000];
 
+// Debug mode (off by default, toggled in the popup footer) writes a timeline to this
+// worker's Console: brave://extensions → Idly → Inspect views → service worker.
+// A worker only keeps logs while its DevTools is open. Errors are always logged.
+let debug = chrome.storage.sync.get({ debug: false }).then((s) => s.debug);
+const time = () => new Date().toLocaleTimeString();
+const log = async (...args) => { if (await debug) console.info(`[Idly ${time()}]`, ...args); };
+
 async function getSettings() {
   return { ...DEFAULTS, ...(await chrome.storage.sync.get(DEFAULTS)) };
 }
@@ -49,11 +56,14 @@ async function commitPending() {
   // A wildcard that replaces narrower entries just drops them from the list; their
   // grants are revoked by pruneGrants once nothing listed overlaps them.
   await chrome.storage.local.set(plan.error ? { pending: null } : { sites: plan.sites, pending: null });
+  if (plan.error) log(`not added ${pending}: ${plan.error}`);
+  else log(`added ${plan.entry}${plan.replaced.length ? `, replacing ${plan.replaced.join(", ")}` : ""}`);
 }
 
 async function removeEntry(entry) {
   const { sites } = await getLocal();
   await chrome.storage.local.set({ sites: sites.filter((s) => s !== entry) });
+  log(`removed ${entry}`);
 }
 
 // If the user revokes a site in the browser's settings, Idly can't run there any
@@ -63,6 +73,7 @@ async function dropRevoked() {
   const access = await Promise.all(sites.map(hasAccess));
   if (access.every(Boolean)) return;
   await chrome.storage.local.set({ sites: sites.filter((_, i) => access[i]) });
+  log(`unlisted (access revoked in the browser): ${sites.filter((_, i) => !access[i]).join(", ")}`);
 }
 
 // Revokes grants that no listed entry needs. A grant that overlaps a listed entry
@@ -76,7 +87,9 @@ async function pruneGrants() {
   const overlaps = (a, b) => covers(a, baseOf(b)) || covers(b, baseOf(a));
   const { origins = [] } = await chrome.permissions.getAll();
   const stale = entriesFromOrigins(origins).filter((g) => !keep.some((s) => overlaps(s, g.entry)));
-  if (stale.length) await chrome.permissions.remove({ origins: stale.flatMap((g) => g.origins) }).catch(() => {});
+  if (!stale.length) return;
+  await chrome.permissions.remove({ origins: stale.flatMap((g) => g.origins) }).catch(() => {});
+  log(`revoked access: ${stale.map((g) => g.entry).join(", ")}`);
 }
 
 // ---- Applying the list -------------------------------------------------------
@@ -136,7 +149,9 @@ async function apply() {
       // Inject into tabs that were already open when the site was added.
       chrome.scripting.executeScript({ target: { tabId: t.id, allFrames: true }, files: ["content.js"] }).catch(() => {});
     } else {
-      chrome.tabs.sendMessage(t.id, { type: "idly:stop" }).catch(() => {});
+      // Only tabs still running content.js answer, so this logs just real stops.
+      chrome.tabs.sendMessage(t.id, { type: "idly:stop" })
+        .then((s) => s && log(`stopped ${s.host} (tab ${t.id})`), () => {});
     }
   }
 }
@@ -161,6 +176,7 @@ chrome.runtime.onMessage.addListener((msg) => {
   if (msg?.type === "idly:scheme") chrome.action.setIcon({ path: iconSet(msg.dark ? "dark" : "light") });
   if (msg?.type === "idly:commit") serial(commitPending);
   if (msg?.type === "idly:remove") serial(() => removeEntry(msg.entry));
+  if (msg?.type === "idly:extended") log(`session warning on ${msg.host}: clicked "${msg.label}"`);
 });
 
 async function startup() {
@@ -193,16 +209,23 @@ chrome.storage.onChanged.addListener((changes, area) => {
     serial(apply);
   }
   if (area === "sync" && changes.intervalMin) syncAlarm();
+  if (area === "sync" && changes.debug) debug = Promise.resolve(changes.debug.newValue);
 });
 
 // Each tab gets its nudge after a random 1–3 s delay, so ticks aren't perfectly periodic.
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name !== ALARM) return;
   const [min, max] = JITTER_MS;
-  for (const tab of await enabledTabs()) {
+  const tabs = await enabledTabs();
+  log(`tick: ${tabs.length} tab(s) to nudge`);
+  for (const tab of tabs) {
+    const delay = min + Math.random() * (max - min);
     setTimeout(() => {
-      chrome.tabs.sendMessage(tab.id, { type: "idly:nudge" }).catch(() => {});
-    }, min + Math.random() * (max - min));
+      chrome.tabs.sendMessage(tab.id, { type: "idly:nudge" }).then(
+        (s) => log(`  nudged ${s?.host ?? "?"} (tab ${tab.id}, +${(delay / 1000).toFixed(1)} s, ${s?.visibility}, focus ${s?.focus})`),
+        (e) => log(`  couldn't nudge tab ${tab.id}: ${e.message}`),
+      );
+    }, delay);
   }
 });
 

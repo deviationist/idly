@@ -146,3 +146,28 @@ test("grants that aren't in the list are not listed", async () => {
   await settle();
   assert.deepEqual(sites(), []);
 });
+
+test("debug logging is off by default and follows the setting", async () => {
+  const logged = [];
+  const original = console.info;
+  console.info = (...a) => logged.push(a.join(" "));
+  try {
+    chrome.tabs.query = async ({ url } = {}) => (url ? [{ id: 7 }] : [{ id: 7 }]);
+    chrome.tabs.sendMessage = async () => ({ host: "bank.example", visibility: "hidden", focus: false });
+    await chrome.storage.local.set({ pending: "bank.example" });
+    userAllows("*://bank.example/*");
+    await settle();
+    logged.length = 0;
+    chrome.alarms.onAlarm.fire({ name: "idly-tick" });
+    await new Promise((r) => setTimeout(r, 3200)); // longer than the jitter
+    assert.deepEqual(logged, []);
+
+    await chrome.storage.sync.set({ debug: true });
+    chrome.alarms.onAlarm.fire({ name: "idly-tick" });
+    await new Promise((r) => setTimeout(r, 3200));
+    assert.ok(logged.some((l) => l.includes("tick: 1 tab(s) to nudge")), logged.join("\n"));
+    assert.ok(logged.some((l) => l.includes("nudged bank.example (tab 7") && l.includes("hidden, focus false")), logged.join("\n"));
+  } finally {
+    console.info = original;
+  }
+});

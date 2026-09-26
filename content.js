@@ -37,7 +37,9 @@ if (!window.__idly) {
         .filter(visible);
       const btn = buttons.find((b) => CONTINUE_TEXT.test((b.innerText || b.value || b.getAttribute("aria-label") || "").trim()));
       if (btn) {
-        console.info("[Idly] extending session via:", (btn.innerText || btn.value || "").trim());
+        const label = (btn.innerText || btn.value || "").trim();
+        if (debug) console.info("[Idly] extending session via:", label);
+        chrome.runtime.sendMessage({ type: "idly:extended", host: location.hostname, label }).catch(() => {});
         btn.click();
         return true;
       }
@@ -64,9 +66,15 @@ if (!window.__idly) {
   function nudge() {
     dismissSessionDialogs();
     simulateActivity();
-    // Visible with the console's "Verbose" level; handy when testing a new site.
-    console.debug(`[Idly] nudge at ${new Date().toLocaleTimeString()} (tab ${document.visibilityState}, focus ${document.hasFocus()})`);
+    if (debug) console.info(`[Idly] nudge at ${new Date().toLocaleTimeString()} (tab ${document.visibilityState}, focus ${document.hasFocus()})`);
   }
+
+  // Debug mode is toggled in the popup footer and applies without a reload.
+  let debug = false;
+  chrome.storage.sync.get({ debug: false }).then((s) => { debug = s.debug; });
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === "sync" && changes.debug) debug = changes.debug.newValue;
+  });
 
   // React as soon as a warning dialog appears rather than waiting for the next tick.
   // MutationObserver callbacks are not throttled the way timers are in background tabs.
@@ -89,9 +97,12 @@ if (!window.__idly) {
     observer = null;
   }
 
-  chrome.runtime.onMessage.addListener((msg) => {
-    if (msg?.type === "idly:nudge") { start(); nudge(); }
-    if (msg?.type === "idly:stop") stop();
+  // The reply lets the service worker log what each nudge found.
+  const state = () => ({ host: location.hostname, visibility: document.visibilityState, focus: document.hasFocus() });
+
+  chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
+    if (msg?.type === "idly:nudge") { start(); nudge(); reply(state()); }
+    if (msg?.type === "idly:stop") { stop(); reply(state()); }
   });
 
   start();

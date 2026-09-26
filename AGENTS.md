@@ -32,7 +32,7 @@ Idly is a Chromium extension that keeps chosen sites (online banking, say) from 
 | Storage | Keys | Why |
 |---|---|---|
 | `chrome.storage.local` | `{ sites: string[], pending: string \| null }` | Per device, because permissions don't sync. `background.js` is the only writer of `sites` |
-| `chrome.storage.sync` | `{ intervalMin, pageSubdomains }` | Settings |
+| `chrome.storage.sync` | `{ intervalMin, pageSubdomains, debug }` | Settings |
 
 A site is active when it's listed **and** Idly has access to it. The popup and background talk through messages (`idly:commit`, `idly:remove`) and storage change events.
 
@@ -72,7 +72,7 @@ A site is active when it's listed **and** Idly has access to it. The popup and b
 - **Stopping must reach open tabs.** Losing a permission doesn't unload a running content script, so `apply` sends `idly:stop` to every tab that isn't enabled.
 - **Popup element IDs and classes are a contract** with the design:
   - IDs: `current-host`, `current-status`, `current-btn`, `sites`, `add`, `domain`, `subdomains`, `error`, `notice`, `interval`.
-  - Added after the handoff, and not in `design/`: `page-scope`, `page-subdomains`, `page-hint` (the scope option under **Keep me logged in**) and `manage` (the footer link to the browser's site-access settings).
+  - Added after the handoff, and not in `design/`: `page-scope`, `page-subdomains`, `page-hint` (the scope option under **Keep me logged in**) `manage` (the footer link to the browser's site-access settings) and `debug` (the debug-logging toggle).
   - Classes set by the script: `on`, `primary`, `muted`.
   - Classes used only by CSS: `wild`, `scope-all`, `scope-exact`.
 - **Light and dark mode are both required.** Colours are custom properties on `:root`, overridden under `prefers-color-scheme: dark`, and `color-scheme: light dark` keeps native controls themed. All text needs WCAG AA contrast (4.5:1) in both themes. The only change from the design's tokens is `--placeholder`, adjusted for exactly this reason. The header logo and the toolbar icon also switch with the theme.
@@ -101,5 +101,6 @@ When a site's warning dialog isn't dismissed, get its exact text and button labe
 - **Syntax:** `node --check content.js`, and for each module `node --check --input-type=module < file.js`.
 - **Popup:** from a scratch directory, not this repo, serve a copy of `popup.html` with `window.chrome` stubbed (storage, `tabs.query`, `permissions.request`). Load each mockup state and screenshot it in both light and dark (for example with Playwright's `emulateMedia`), then compare against `Idly Mockups`.
 - **Content script:** serve a mock page that stubs `window.chrome.runtime.onMessage` and loads `content.js`. Include a session-warning dialog (one inside a shadow root) and a decoy payment dialog with a "Continue" button. Fire a nudge and assert that only the session dialog's button was clicked.
+- **Debug mode:** tick **Debug logging** in the popup footer. The service worker's Console (open it from `brave://extensions` → Idly → **Inspect views** → service worker) then shows a timeline: ticks, each tab nudged with its visibility and focus, warnings clicked, and sites added, removed or stopped. The page's Console shows a line per nudge. Keep new logging behind `log()` in `background.js` or the `debug` flag in `content.js`, so nothing is logged by default. Errors are always logged.
 - **Full extension:** a manual pass. Reload it in `chrome://extensions`, add an entry, check the **ON** badge, switch the browser between light and dark to watch the toolbar icon, and read the `[Idly]` logs in the page console.
 - Don't leave test pages or `.playwright-mcp/` output in the repo.

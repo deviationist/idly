@@ -165,11 +165,13 @@ header h1 { margin: 0; font-size: 14px; font-weight: 600; }
 #manage:hover { color: var(--fg); }
 
 footer {
-  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px;
   margin-top: 16px; padding: 10px 16px 12px;
   border-top: 1px solid var(--border);
 }
+footer .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+footer .row + .row { margin-top: 8px; }
 footer label { font-size: 12px; color: var(--muted); }
+footer .check { margin-top: 0; }
 #interval {
   width: 64px; height: 26px; padding: 0 6px;
   border: 1px solid var(--border); border-radius: 6px;
@@ -218,9 +220,14 @@ footer label { font-size: 12px; color: var(--muted); }
 </section>
 
 <footer>
-  <label for="interval">Nudge every (minutes)</label>
-  <input id="interval" type="number" min="0.5" step="0.5" value="1">
-  <button id="manage" type="button">Manage site access</button>
+  <div class="row">
+    <label for="interval">Nudge every (minutes)</label>
+    <input id="interval" type="number" min="0.5" step="0.5" value="1">
+  </div>
+  <div class="row">
+    <button id="manage" type="button">Manage site access</button>
+    <label class="check" title="Log each nudge to the page's Console and a timeline to the service worker's Console"><input id="debug" type="checkbox"> Debug logging</label>
+  </div>
 </footer>
 
 <script type="module" src="popup.js"></script>

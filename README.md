@@ -29,6 +29,12 @@ Idly keeps its own list of websites on this device. It doesn't sync, because the
 - **Revoking a site under Site access** removes it from Idly's list too, because Idly can't run there any more.
 - **Sites you grant from the browser's own menu** aren't added to the list. Only the popup adds sites.
 
+## Debug mode
+
+Tick **Debug logging** in the popup footer to watch Idly work. It's off by default.
+- **Service worker Console:** go to `brave://extensions` (or `chrome://extensions`), turn on Developer mode, and under Idly's **Inspect views** click **service worker**. You'll see a timeline: each tick, each tab nudged (with whether it was visible and focused), session warnings clicked, and sites added or removed. A service worker only keeps logs while its DevTools is open.
+- **The site's own Console:** DevTools on the tab shows `[Idly] nudge at …` for each nudge.
+
 ## Limits
 
 - Idly can't get past a **server-side absolute session limit**, for example a forced re-login after a fixed number of hours whatever you do.

@@ -6,7 +6,7 @@
 // after they're removed, and can grant more than the user listed.
 
 // Settings, synced across devices.
-export const DEFAULTS = { intervalMin: 1, pageSubdomains: false };
+export const DEFAULTS = { intervalMin: 1, pageSubdomains: false, debug: false };
 // Per-device state. The list isn't synced because permissions aren't: a synced list
 // would show sites Idly can't access on the other device. "pending" is the entry
 // waiting for the permission prompt (see popup.js addEntry).

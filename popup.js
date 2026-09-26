@@ -21,6 +21,7 @@ async function load() {
   const settings = await chrome.storage.sync.get(DEFAULTS);
   $("interval").value = settings.intervalMin;
   pageSubdomains.checked = settings.pageSubdomains;
+  $("debug").checked = settings.debug;
   chrome.storage.local.set({ pending: null }); // left over from a declined prompt
   await loadSites();
 
@@ -179,6 +180,10 @@ chrome.storage.onChanged.addListener(async (changes, area) => {
 pageSubdomains.addEventListener("change", () => {
   renderCurrent();
   chrome.storage.sync.set({ pageSubdomains: pageSubdomains.checked }).catch(() => {});
+});
+
+$("debug").addEventListener("change", (e) => {
+  chrome.storage.sync.set({ debug: e.target.checked }).catch(() => feedback({ error: MESSAGES.saveFailed }));
 });
 
 // The only place a site's permission can be revoked completely (see removeSite).
