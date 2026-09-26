@@ -39,6 +39,10 @@ Tick **Debug logging** in the popup footer to watch Idly work. It's off by defau
 - **Service worker Console:** go to `brave://extensions` (or `chrome://extensions`), turn on Developer mode, and under Idly's **Inspect views** click **service worker**. You'll see a timeline: each tick, each tab nudged (with whether it was visible and focused), session warnings clicked, and sites added or removed. A service worker only keeps logs while its DevTools is open.
 - **The site's own Console:** DevTools on the tab shows `[Idly] nudge at …` for each nudge.
 
+## What it's for
+
+Most sites keep you logged in on their own or have generous timeouts, so they need nothing. Idly is for sites with an **aggressive idle-logout** — notably EU/EEA online banking, where PSD2 requires the bank to end an online session after about **5 minutes** of inactivity. That limit is enforced on the bank's **server**, so Idly can't quietly suppress it; instead it clicks the bank's own "stay logged in" warning when it appears, which is what tells the server you're still there. (In testing, one bank was the strict case; several others stayed logged in without any help.)
+
 ## Limits
 
 - Idly can't get past a **server-side absolute session limit**, for example a forced re-login after a fixed number of hours whatever you do.
