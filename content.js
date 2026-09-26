@@ -55,10 +55,15 @@ if (!window.__idly) {
   // At most one click per CLICK_COOLDOWN_MS: if a click doesn't close the warning
   // (say the site's handler failed), the observer mustn't keep clicking on every change.
   const CLICK_COOLDOWN_MS = 30 * 1000;
+  // A short, random reaction delay before clicking, so the click doesn't land the
+  // same instant the dialog appears (a human takes a beat). Not evasion: the click is
+  // still a plain, honest .click(); this only avoids a zero-millisecond reaction.
+  const CLICK_DELAY_MS = [50, 500];
   let lastClick = 0;
+  let clickPending = false;
 
   function dismissSessionDialogs() {
-    if (Date.now() - lastClick < CLICK_COOLDOWN_MS) return false;
+    if (clickPending || Date.now() - lastClick < CLICK_COOLDOWN_MS) return false;
     const dialogs = deepQueryAll(
       'dialog[open], [role="dialog"], [role="alertdialog"], [aria-modal="true"], .modal.show, .modal.in'
     ).filter(visible);
@@ -90,10 +95,20 @@ if (!window.__idly) {
         for (const b of buttonEls) if (b !== btn && btn.contains(b)) { btn = b; changed = true; }
       }
       const label = labelOf(btn);
-      if (debug) console.info(`[Idly] extending session via "${label}" (${reason})`);
-      chrome.runtime.sendMessage({ type: "idly:extended", host: location.hostname, label }).catch(() => {});
-      lastClick = Date.now();
-      btn.click();
+      const [lo, hi] = CLICK_DELAY_MS;
+      const delay = lo + Math.random() * (hi - lo);
+      lastClick = Date.now();   // engage the cooldown now, so pending clicks don't stack
+      clickPending = true;
+      setTimeout(() => {
+        clickPending = false;
+        if (!btn.isConnected || !visible(btn)) {
+          if (debug) console.debug("[Idly] warning closed before the click");
+          return;
+        }
+        if (debug) console.info(`[Idly] extending session via "${label}" (${reason}) after ${Math.round(delay)}ms`);
+        chrome.runtime.sendMessage({ type: "idly:extended", host: location.hostname, label }).catch(() => {});
+        btn.click();
+      }, delay);
       return true;
     }
     return false;
