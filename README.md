@@ -11,8 +11,8 @@ A Chromium extension (Manifest V3, vanilla JS, no build step) that stops chosen 
 ## How it works
 
 There are two ways to add a website:
-- **Keep me logged in** on the site you're on adds its exact address, or, with the **Include subdomains** box under it ticked, the whole domain (`www.bank.com` becomes `*.bank.com`). Idly remembers your choice for next time.
-- The **Add a website** form accepts a domain or a pasted URL. With **Include subdomains** ticked (the default), `bank.com` is saved as `*.bank.com`, which covers bank.com and all its subdomains, such as `www.` and `auth.`. Unticked, it covers only the exact address you typed.
+- **Keep me logged in** on the site you're on adds its exact address, or, with the **Include subdomains** box under it ticked, the whole domain (`www.example.com` becomes `*.example.com`). Idly remembers your choice for next time.
+- The **Add a website** form accepts a domain or a pasted URL. With **Include subdomains** ticked (the default), `example.com` is saved as `*.example.com`, which covers example.com and all its subdomains, such as `www.` and `auth.`. Unticked, it covers only the exact address you typed.
 
 Idly refuses addresses without a TLD, IP addresses and duplicates. If a wildcard already covers an address, it tells you. A new wildcard replaces the narrower entries it covers.
 

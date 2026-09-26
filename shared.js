@@ -29,8 +29,8 @@ export const MESSAGES = {
   keepaliveHost: (entry) => `The address must be on ${entry}.`,
 };
 
-// A site entry is either an exact host ("bank.com") or a wildcard ("*.bank.com"),
-// which covers bank.com itself and every subdomain.
+// A site entry is either an exact host ("example.com") or a wildcard ("*.example.com"),
+// which covers example.com itself and every subdomain.
 export const isWildcard = (entry) => entry.startsWith("*.");
 export const baseOf = (entry) => (isWildcard(entry) ? entry.slice(2) : entry);
 
@@ -38,7 +38,7 @@ export const baseOf = (entry) => (isWildcard(entry) ? entry.slice(2) : entry);
 export const coveringEntry = (sites, host) => sites.find((e) => e === host) ?? sites.find((e) => covers(e, host));
 
 // Chrome match pattern for an entry, over http and https.
-// Chrome's "*.bank.com" host pattern already includes bank.com itself.
+// Chrome's "*.example.com" host pattern already includes example.com itself.
 export const patternFor = (entry) => `*://${entry}/*`;
 
 export const covers = (entry, host) => {
@@ -55,8 +55,8 @@ const IPV4 = /^\d+(?:\.\d+){3}$/;
 export const hasWildcardPrefix = (raw) => String(raw).trim().replace(SCHEME, "").startsWith("*.");
 
 // Reduces whatever the user typed or pasted to a hostname.
-// "https://user@www.bank.com:8443/login?x=1" becomes { host: "www.bank.com", wildcard: false },
-// "*.bank.com" becomes { host: "bank.com", wildcard: true }. On failure it returns
+// "https://user@www.example.com:8443/login?x=1" becomes { host: "www.example.com", wildcard: false },
+// "*.example.com" becomes { host: "example.com", wildcard: true }. On failure it returns
 // { error } with a key of MESSAGES.
 export function parseInput(raw) {
   let s = String(raw ?? "").trim().toLowerCase().replace(SCHEME, "");
@@ -70,7 +70,7 @@ export function parseInput(raw) {
 
   const labels = host.split(".");
   if (
-    labels.length < 2 ||              // no TLD: "netbank", "localhost"
+    labels.length < 2 ||              // no TLD: "intranet", "localhost"
     host.length > 253 ||
     IPV4.test(host) ||                // IP addresses; IPv6 "[::1]" fails LABEL below
     !labels.every((l) => LABEL.test(l)) ||
@@ -80,7 +80,7 @@ export function parseInput(raw) {
   return { host, wildcard };
 }
 
-// "*.www.bank.com" is almost never what people mean, and "*.bank.com" covers www anyway.
+// "*.www.example.com" is almost never what people mean, and "*.example.com" covers www anyway.
 export const stripWww = (host) =>
   host.startsWith("www.") && host.slice(4).includes(".") ? host.slice(4) : host;
 
@@ -101,7 +101,7 @@ export function planAdd(sites, host, wildcard) {
 }
 
 // Maps a granted host-permission pattern back to a site entry:
-// "*://*.bank.com/*" → "*.bank.com", "https://www.bank.com/*" → "www.bank.com".
+// "*://*.example.com/*" → "*.example.com", "https://www.example.com/*" → "www.example.com".
 // Returns null for patterns that aren't a single website, such as "*://*/*" or
 // "<all_urls>" from the browser's "On all sites" setting.
 export function entryFromOrigin(origin) {

@@ -167,8 +167,8 @@ function takeWildcardPrefix() {
   subdomains.checked = true;
 }
 
-// Shows the cleaned hostname: "https://www.bank.com/login?x=1" becomes "www.bank.com",
-// or "bank.com" when subdomains are included. Invalid input is left for submit to report.
+// Shows the cleaned hostname: "https://www.example.com/login?x=1" becomes "www.example.com",
+// or "example.com" when subdomains are included. Invalid input is left for submit to report.
 function cleanField() {
   const parsed = parseInput(field.value);
   if (parsed.wildcard) subdomains.checked = true;
