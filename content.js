@@ -7,6 +7,11 @@ if (!window.__idly) {
   // which button to click, so it can be unit-tested without a browser.
   const { decide, countingDown } = globalThis.IdlyDetect;
 
+  // Debug logging (toggled in the popup footer, applies without a reload). Every
+  // line is timestamped and prefixed so the page console is easy to filter.
+  let debug = false;
+  const log = (...args) => { if (debug) console.info(`[Idly ${new Date().toLocaleTimeString()}]`, ...args); };
+
   // How long since the user's last *real* input. Only trusted events count, so Idly's
   // own synthetic activity never makes the page look used. This is the main guard: a
   // payment or "save changes?" dialog appears right after a click, when idle is ~0.
@@ -74,9 +79,9 @@ if (!window.__idly) {
     // Your own logout cap: past it, stop extending and let the site log you out.
     const capMs = Number(siteOptions.maxIdleMin) * 60 * 1000;
     if (capMs && idleMs >= capMs) {
-      if (debug && !pastCapLogged) {
-        console.info(`[Idly] past your ${siteOptions.maxIdleMin}-min inactivity cap; letting the session log out`);
+      if (!pastCapLogged) {
         pastCapLogged = true;
+        log(`past your ${siteOptions.maxIdleMin}-min inactivity cap; letting the session log out`);
       }
       return false;
     }
@@ -100,7 +105,7 @@ if (!window.__idly) {
         buttons: buttonEls.map(labelOf),
       });
       if (index === null) {
-        if (debug && reason !== "user was active in the last minute") console.debug("[Idly] left a dialog alone:", reason);
+        if (reason !== "user was active in the last minute") log("left a dialog alone:", reason);
         continue;
       }
 
@@ -119,10 +124,10 @@ if (!window.__idly) {
       setTimeout(() => {
         clickPending = false;
         if (!btn.isConnected || !visible(btn)) {
-          if (debug) console.debug("[Idly] warning closed before the click");
+          log("warning closed before the click");
           return;
         }
-        if (debug) console.info(`[Idly] extending session via "${label}" (${reason}) after ${Math.round(delay)}ms`);
+        log(`extending session via "${label}" (${reason}) after ${Math.round(delay)}ms`);
         chrome.runtime.sendMessage({ type: "idly:extended", host: location.hostname, label }).catch(() => {});
         btn.click();
       }, delay);
@@ -168,7 +173,7 @@ if (!window.__idly) {
     } catch (e) {
       result = `failed: ${e.message}`;
     }
-    if (debug) console.info(`[Idly] keepalive ${url}: ${result}`);
+    log(`keepalive ${url}: ${result}`);
     chrome.runtime.sendMessage({ type: "idly:keepalive", host: location.hostname, url, result }).catch(() => {});
   }
 
@@ -177,14 +182,12 @@ if (!window.__idly) {
     dismissSessionDialogs();
     if (options.simulate) simulateActivity();
     keepalive(options.keepalive);
-    if (debug) {
-      const did = [options.simulate && "simulated activity", options.keepalive && "keepalive due check"].filter(Boolean);
-      console.info(`[Idly] nudge at ${new Date().toLocaleTimeString()} (tab ${document.visibilityState}, focus ${document.hasFocus()})${did.length ? `: ${did.join(", ")}` : ""}`);
-    }
+    const idleMin = ((Date.now() - lastInput) / 60000).toFixed(1);
+    const cap = options.maxIdleMin ? `, cap ${options.maxIdleMin}m` : "";
+    const did = [options.simulate && "simulated activity", options.keepalive && "keepalive check"].filter(Boolean);
+    log(`nudge (tab ${document.visibilityState}, focus ${document.hasFocus()}, idle ${idleMin}m${cap})${did.length ? `: ${did.join(", ")}` : ""}`);
   }
 
-  // Debug mode is toggled in the popup footer and applies without a reload.
-  let debug = false;
   chrome.storage.sync.get({ debug: false }).then((s) => { debug = s.debug; });
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === "sync" && changes.debug) debug = changes.debug.newValue;

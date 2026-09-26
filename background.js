@@ -19,6 +19,8 @@ const JITTER_MS = [1000, 3000];
 let debug = chrome.storage.sync.get({ debug: false }).then((s) => s.debug);
 const time = () => new Date().toLocaleTimeString();
 const log = async (...args) => { if (await debug) console.info(`[Idly ${time()}]`, ...args); };
+// Errors are always logged (not gated on debug), and timestamped like everything else.
+const logError = (...args) => console.error(`[Idly ${time()}]`, ...args);
 
 async function getSettings() {
   return { ...DEFAULTS, ...(await chrome.storage.sync.get(DEFAULTS)) };
@@ -41,7 +43,7 @@ async function activeSites() {
 // the list is read-modify-write.
 let queue = Promise.resolve();
 function serial(task) {
-  queue = queue.then(task).catch((e) => console.error("[Idly]", e));
+  queue = queue.then(task).catch((e) => logError(e));
   return queue;
 }
 
