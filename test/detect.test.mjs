@@ -24,6 +24,15 @@ test("a real Norwegian bank warning (anonymised)", () => {
   }), "Hold meg innlogget");
 });
 
+test("a Norwegian drawer with a countdown and a single stay button (anonymised)", () => {
+  const drawer = {
+    text: "Du er i ferd med å bli logget ut pga. inaktivitet. Ønsker du fortsatt å være logget inn, vennligst trykk \"Jeg vil være innlogget\" Gjenstående tid: 6",
+    hints: "MuiDrawer-paper MuiDrawer-modal",
+  };
+  clicks(warning({ ...drawer, buttons: ["Jeg vil være innlogget"] }), "Jeg vil være innlogget");
+  // Recognised as a stay label, so it's still chosen if a log-out button is added.
+  clicks(warning({ ...drawer, buttons: ["Logg ut", "Jeg vil være innlogget", "Les mer"] }), "Jeg vil være innlogget");
+});
 test("warnings in other languages", () => {
   clicks(warning({ text: "Your session will expire in 2 minutes.", buttons: ["Log out", "Stay signed in"] }), "Stay signed in");
   clicks(warning({ text: "Du loggas snart ut på grund av inaktivitet.", buttons: ["Logga ut", "Fortsätt"] }), "Fortsätt");

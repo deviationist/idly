@@ -24,7 +24,7 @@ globalThis.IdlyWords = {
   },
   no: {
     session: ["logget ut", "logges ut", "logger deg ut", "utlogg", "inaktiv", "sesjon", "økt", "tidsavbrudd"],
-    stay: ["fortsett", "forbli", "bli innlogget", "bli pålogget", "hold meg", "forleng", "forny", "ja", "jeg er her"],
+    stay: ["fortsett", "forbli", "bli innlogget", "bli pålogget", "hold meg", "jeg vil være innlogget", "jeg vil være pålogget", "forleng", "forny", "ja", "jeg er her"],
     leave: ["logg ut", "logg meg ut", "logg av", "avslutt"],
     dismiss: ["lukk", "avbryt", "nei", "ikke nå"],
   },
