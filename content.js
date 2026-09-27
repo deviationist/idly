@@ -37,9 +37,14 @@ if (!window.__idly) {
     return out;
   }
 
+  // A background tab doesn't render, so a dialog that animates in (from scale(0), or on
+  // the next animation frame) stays 0x0 until the tab is shown. While hidden, only
+  // check that the page hasn't hidden it (display, visibility, content-visibility).
   const visible = (el) => {
+    if (!el.checkVisibility({ visibilityProperty: true })) return false;
+    if (document.hidden) return true;
     const r = el.getBoundingClientRect();
-    return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== "hidden";
+    return r.width > 0 && r.height > 0;
   };
 
   const labelOf = (b) => (b.innerText || b.value || b.getAttribute("aria-label") || "").trim();
@@ -63,6 +68,7 @@ if (!window.__idly) {
   const lastText = new WeakMap();
   // What was last logged per dialog, so the observer's frequent passes don't repeat it.
   const lastLogged = new WeakMap();
+  const found = new WeakSet();
   const logOnce = (dlg, line) => { if (lastLogged.get(dlg) !== line) { lastLogged.set(dlg, line); log(line); } };
 
   // At most one click per CLICK_COOLDOWN_MS: if a click doesn't close the warning
@@ -89,9 +95,15 @@ if (!window.__idly) {
       return false;
     }
 
-    const dialogs = deepQueryAll(
+    const candidates = deepQueryAll(
       'dialog[open], [role="dialog"], [role="alertdialog"], [aria-modal="true"], .modal.show, .modal.in'
-    ).filter(visible);
+    );
+    const dialogs = candidates.filter(visible);
+    for (const dlg of candidates) {
+      if (dialogs.includes(dlg) || !debug) continue;
+      const r = dlg.getBoundingClientRect();
+      logOnce(dlg, `skipped a dialog that isn't visible (${Math.round(r.width)}x${Math.round(r.height)}, tab ${document.visibilityState})`);
+    }
 
     for (const dlg of dialogs) {
       const text = dlg.textContent || "";
@@ -99,10 +111,10 @@ if (!window.__idly) {
       lastText.set(dlg, text);
 
       const buttonEls = deepQueryAll(BUTTON_SELECTOR, dlg).filter(visible);
-      if (!lastLogged.has(dlg)) {
+      if (!found.has(dlg)) {
+        found.add(dlg);
         const snippet = (dlg.innerText || text).replace(/\s+/g, " ").trim().slice(0, 80);
-        log(`dialog found: "${snippet}" (buttons: ${buttonEls.map((b) => `"${labelOf(b)}"`).join(", ") || "none"})`);
-        lastLogged.set(dlg, "");
+        log(`dialog found (tab ${document.visibilityState}): "${snippet}" (buttons: ${buttonEls.map((b) => `"${labelOf(b)}"`).join(", ") || "none"})`);
       }
       const { index, reason } = decide({
         idleMs,
