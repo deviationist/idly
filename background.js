@@ -198,7 +198,7 @@ chrome.runtime.onMessage.addListener((msg) => {
   if (msg?.type === "idly:scheme") chrome.action.setIcon({ path: iconSet(msg.dark ? "dark" : "light") });
   if (msg?.type === "idly:commit") serial(commitPending);
   if (msg?.type === "idly:remove") serial(() => removeEntry(msg.entry));
-  if (msg?.type === "idly:extended") log(`session warning on ${msg.host}: clicked "${msg.label}"`);
+  if (msg?.type === "idly:extended") log(`session warning on ${msg.host}: clicked "${msg.label}" after ${msg.waited} ms`);
   if (msg?.type === "idly:keepalive") log(`keepalive on ${msg.host} ${msg.url}: ${msg.result}`);
   if (msg?.type === "idly:options") serial(() => setOptions(msg.entry, msg.options));
 });

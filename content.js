@@ -61,6 +61,9 @@ if (!window.__idly) {
 
   // Remembers each dialog's last text so a shrinking number reads as a countdown.
   const lastText = new WeakMap();
+  // What was last logged per dialog, so the observer's frequent passes don't repeat it.
+  const lastLogged = new WeakMap();
+  const logOnce = (dlg, line) => { if (lastLogged.get(dlg) !== line) { lastLogged.set(dlg, line); log(line); } };
 
   // At most one click per CLICK_COOLDOWN_MS: if a click doesn't close the warning
   // (say the site's handler failed), the observer mustn't keep clicking on every change.
@@ -96,6 +99,11 @@ if (!window.__idly) {
       lastText.set(dlg, text);
 
       const buttonEls = deepQueryAll(BUTTON_SELECTOR, dlg).filter(visible);
+      if (!lastLogged.has(dlg)) {
+        const snippet = (dlg.innerText || text).replace(/\s+/g, " ").trim().slice(0, 80);
+        log(`dialog found: "${snippet}" (buttons: ${buttonEls.map((b) => `"${labelOf(b)}"`).join(", ") || "none"})`);
+        lastLogged.set(dlg, "");
+      }
       const { index, reason } = decide({
         idleMs,
         dialogLike: true,
@@ -105,7 +113,7 @@ if (!window.__idly) {
         buttons: buttonEls.map(labelOf),
       });
       if (index === null) {
-        if (reason !== "user was active in the last minute") log("left a dialog alone:", reason);
+        logOnce(dlg, `left the dialog alone: ${reason}`);
         continue;
       }
 
@@ -121,14 +129,19 @@ if (!window.__idly) {
       const delay = lo + Math.random() * (hi - lo);
       lastClick = Date.now();   // engage the cooldown now, so pending clicks don't stack
       clickPending = true;
+      const planned = Math.round(delay);
+      const scheduled = performance.now();
+      logOnce(dlg, `button "${label}" chosen (${reason}); clicking in ${planned} ms`);
       setTimeout(() => {
         clickPending = false;
+        // Background tabs throttle timers, so the real wait can exceed the planned one.
+        const waited = Math.round(performance.now() - scheduled);
         if (!btn.isConnected || !visible(btn)) {
-          log("warning closed before the click");
+          log(`warning closed before the click (waited ${waited} ms of ${planned} ms)`);
           return;
         }
-        log(`extending session via "${label}" (${reason}) after ${Math.round(delay)}ms`);
-        chrome.runtime.sendMessage({ type: "idly:extended", host: location.hostname, label }).catch(() => {});
+        log(`clicked "${label}" after ${waited} ms (planned ${planned} ms)`);
+        chrome.runtime.sendMessage({ type: "idly:extended", host: location.hostname, label, waited }).catch(() => {});
         btn.click();
       }, delay);
       return true;
