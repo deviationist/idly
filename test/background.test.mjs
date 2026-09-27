@@ -205,3 +205,74 @@ test("options leave with their site", async () => {
   await settle();
   assert.deepEqual(chrome.storage.local.peek().options, {});
 });
+
+test("bringing a tab forward: only when opted in, and back to the previous tab", async () => {
+  const activated = [];
+  let front = 1;   // tab 1 is the user's tab; tab 9 is the site's, hidden
+  chrome.windows = { get: async () => ({ state: "normal" }) };
+  chrome.tabs.query = async (q = {}) => (q.active ? [{ id: front }] : q.url ? [] : []);
+  chrome.tabs.update = async (id, { active }) => { if (active) { front = id; activated.push(id); } };
+  const site = { id: 9, windowId: 1, url: "https://netbank.bank.example/overview" };
+  await chrome.storage.local.set({ pending: "*.bank.example" });
+  userAllows("*://*.bank.example/*");
+  await settle();
+
+  chrome.runtime.onMessage.fire({ type: "idly:reveal" }, { tab: site });
+  await settle();
+  assert.deepEqual(activated, [], "not opted in: nothing switches");
+
+  message({ type: "idly:options", entry: "*.bank.example", options: { reveal: true } });
+  await settle();
+  chrome.runtime.onMessage.fire({ type: "idly:reveal" }, { tab: site });
+  await settle();
+  assert.deepEqual(activated, [9], "the site's tab comes forward");
+  chrome.runtime.onMessage.fire({ type: "idly:reveal-done", outcome: 'clicked "Stay"' }, { tab: site });
+  await settle();
+  assert.deepEqual(activated, [9, 1], "and the user's tab comes back once clicked");
+
+  // If the user switched to another tab meanwhile, it isn't taken away from them.
+  chrome.runtime.onMessage.fire({ type: "idly:reveal" }, { tab: site });
+  await settle();
+  front = 5;
+  chrome.runtime.onMessage.fire({ type: "idly:reveal-done", outcome: "clicked" }, { tab: site });
+  await settle();
+  assert.equal(front, 5);
+
+  // Never restores a minimized window.
+  activated.length = 0;
+  chrome.windows.get = async () => ({ state: "minimized" });
+  front = 1;
+  chrome.runtime.onMessage.fire({ type: "idly:reveal" }, { tab: site });
+  await settle();
+  assert.deepEqual(activated, []);
+});
+
+test("tabs are brought forward one at a time, each returning to the user's tab", async () => {
+  const activated = [];
+  let front = 1;
+  chrome.windows = { get: async () => ({ state: "normal" }) };
+  chrome.tabs.query = async (q = {}) => (q.active ? [{ id: front }] : []);
+  chrome.tabs.update = async (id, { active }) => { if (active) { front = id; activated.push(id); } };
+  await chrome.storage.local.set({ pending: "*.bank.example" });
+  userAllows("*://*.bank.example/*");
+  await settle();
+  message({ type: "idly:options", entry: "*.bank.example", options: { reveal: true } });
+  await settle();
+  const a = { id: 8, windowId: 1, url: "https://a.bank.example/" };
+  const b = { id: 9, windowId: 1, url: "https://b.bank.example/" };
+  const c = { id: 10, windowId: 1, url: "https://c.bank.example/" };
+
+  chrome.runtime.onMessage.fire({ type: "idly:reveal" }, { tab: a });
+  chrome.runtime.onMessage.fire({ type: "idly:reveal" }, { tab: b });
+  chrome.runtime.onMessage.fire({ type: "idly:reveal" }, { tab: c });
+  // c sorts itself out while waiting (say the user looked at it), so its turn is skipped.
+  chrome.runtime.onMessage.fire({ type: "idly:reveal-done", outcome: "clicked" }, { tab: c });
+  await settle();
+  assert.deepEqual(activated, [8], "only one tab in front at a time");
+  chrome.runtime.onMessage.fire({ type: "idly:reveal-done", outcome: "clicked" }, { tab: a });
+  await settle();
+  assert.deepEqual(activated, [8, 1, 9], "back to the user's tab, then the next");
+  chrome.runtime.onMessage.fire({ type: "idly:reveal-done", outcome: "clicked" }, { tab: b });
+  await settle();
+  assert.deepEqual(activated, [8, 1, 9, 1]);
+});

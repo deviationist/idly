@@ -5,7 +5,7 @@ if (!window.__idly) {
   // The decision logic and word lists live in detect.js / words.js, injected before
   // this script (see background.js). IdlyDetect.decide takes plain facts and says
   // which button to click, so it can be unit-tested without a browser.
-  const { decide, countingDown, mentionsSession, numbers } = globalThis.IdlyDetect;
+  const { decide, countingDown, mentionsSession, numbers, MIN_IDLE_MS } = globalThis.IdlyDetect;
 
   // Debug logging (toggled in the popup footer, applies without a reload). Every
   // line is timestamped and prefixed so the page console is easy to filter.
@@ -172,7 +172,9 @@ if (!window.__idly) {
       }
       const label = labelOf(btn);
       const [lo, hi] = CLICK_DELAY_MS;
-      const delay = lo + Math.random() * (hi - lo);
+      // While the tab is only in front for this click (see reveal), every millisecond
+      // is visible to the user, so there's no reaction delay.
+      const delay = isRevealing() ? 0 : lo + Math.random() * (hi - lo);
       lastClick = Date.now();   // engage the cooldown now, so pending clicks don't stack
       clickPending = true;
       const planned = Math.round(delay);
@@ -184,12 +186,14 @@ if (!window.__idly) {
         const waited = Math.round(performance.now() - scheduled);
         if (!btn.isConnected || !visible(btn)) {
           log(`warning closed before the click (waited ${waited} ms of ${planned} ms)`);
+          finishReveal("the warning closed before the click");
           return;
         }
         log(`clicked "${label}" after ${waited} ms (planned ${planned} ms)`);
         endEpisode(`clicked "${label}"`);
         chrome.runtime.sendMessage({ type: "idly:extended", host: location.hostname, label, waited }).catch(() => {});
         btn.click();
+        finishReveal(`clicked "${label}"`);
       }, delay);
       return true;
     }
@@ -240,6 +244,7 @@ if (!window.__idly) {
   // options: the site's settings from the popup, { simulate?, keepalive? }.
   function nudge(options = {}) {
     noteTitle();
+    if (mentionsSession(document.title)) maybeReveal();
     dismissSessionDialogs();   // the nudge line below logs what it saw
     if (options.simulate) simulateActivity();
     keepalive(options.keepalive);
@@ -349,18 +354,51 @@ if (!window.__idly) {
   }
 
   // Sites often change the tab title when their logout warning starts, even in a
-  // hidden tab that hasn't drawn the dialog yet, so debug mode logs each change.
+  // hidden tab that hasn't built the dialog yet. Debug mode logs each change, and a
+  // warning title in a hidden tab can ask for the tab to be brought forward.
   let lastTitle = document.title;
   function noteTitle() {
-    if (!debug || document.title === lastTitle) return;
+    if (document.title === lastTitle) return;
     lastTitle = document.title;
-    if (mentionsSession(lastTitle)) {
+    const warning = mentionsSession(lastTitle);
+    if (warning) {
       const n = numbers(lastTitle);
       const left = n.length ? ` (${n[0]} s left?)` : "";
       signal("title-warning", `"${lastTitle}"${left}`, { warning: true });
+      maybeReveal();
     } else {
       signal("title", `"${lastTitle}"`);
     }
+  }
+
+  // Opt-in per site (options.reveal): some sites only build their warning dialog while
+  // the tab is visible, because a hidden tab runs no animation frames. Their title
+  // still changes, so on a warning title in a hidden tab this asks background.js to
+  // bring the tab forward. The dialog is then built, clicked at once, and
+  // finishReveal tells background.js to switch back to the user's tab. The same
+  // guards as a click apply: idle for MIN_IDLE_MS and under the inactivity cap.
+  const REVEAL_COOLDOWN_MS = 60 * 1000;
+  // How long this tab counts as being revealed: several sites may be queued ahead of it.
+  const REVEAL_MAX_MS = 30 * 1000;
+  let revealAskedAt = 0;
+  let revealUntil = 0;
+  const isRevealing = () => Date.now() < revealUntil;
+  function maybeReveal() {
+    if (!siteOptions.reveal || !document.hidden || isRevealing()) return;
+    if (Date.now() - revealAskedAt < REVEAL_COOLDOWN_MS) return;
+    const idleMs = Date.now() - lastInput;
+    const capMs = Number(siteOptions.maxIdleMin) * 60 * 1000;
+    if (idleMs < MIN_IDLE_MS) return log("reveal: not now, the page had input in the last minute");
+    if (capMs && idleMs >= capMs) return log("reveal: not now, past your inactivity cap");
+    revealAskedAt = Date.now();
+    revealUntil = Date.now() + REVEAL_MAX_MS;
+    signal("reveal", "asking to bring the tab forward for the warning");
+    chrome.runtime.sendMessage({ type: "idly:reveal" }).catch(() => { revealUntil = 0; });
+  }
+  function finishReveal(outcome) {
+    if (!isRevealing()) return;
+    revealUntil = 0;
+    chrome.runtime.sendMessage({ type: "idly:reveal-done", outcome }).catch(() => {});
   }
 
   // React as soon as a warning dialog appears rather than waiting for the next tick.
@@ -375,7 +413,9 @@ if (!window.__idly) {
     observer = new MutationObserver((records) => {
       noteTitle();
       if (debug) noteSessionText(records);
-      if (pending || records.every((r) => r.type === "characterData")) return;
+      if (records.every((r) => r.type === "characterData")) return;
+      if (isRevealing()) { watchShadowRoots(); check("page change"); return; }
+      if (pending) return;
       pending = true;
       setTimeout(() => { pending = false; if (observer) { watchShadowRoots(); check("page change"); } }, 250);
     });
@@ -384,7 +424,10 @@ if (!window.__idly) {
     syncHeartbeat();
   }
 
-  addEventListener("visibilitychange", () => signal("visibility", `tab is now ${document.visibilityState}`));
+  addEventListener("visibilitychange", () => {
+    signal("visibility", `tab is now ${document.visibilityState}`);
+    if (isRevealing() && !document.hidden) check("revealed");
+  });
   addEventListener("pagehide", () => {
     signal("page-leave", `leaving ${location.pathname}`);
     endEpisode(`page left (${location.pathname})`);

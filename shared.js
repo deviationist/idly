@@ -10,7 +10,7 @@ export const DEFAULTS = { intervalMin: 1, pageSubdomains: false, debug: false };
 // Per-device state. The list isn't synced because permissions aren't: a synced list
 // would show sites Idly can't access on the other device. "pending" is the entry
 // waiting for the permission prompt (see popup.js addEntry). "options" holds per-site
-// settings keyed by entry: { simulate?: true, keepalive?: "/path" }.
+// settings keyed by entry: { simulate?: true, keepalive?: "/path", maxIdleMin?: n, reveal?: true }.
 export const LOCAL_DEFAULTS = { sites: [], pending: null, options: {} };
 
 // How often a site's keepalive request is sent, at most.

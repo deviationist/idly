@@ -194,7 +194,67 @@ async function ensureThemeWatcher() {
 
 // ---- Events ------------------------------------------------------------------
 
-chrome.runtime.onMessage.addListener((msg) => {
+// ---- Bringing a tab forward ------------------------------------------------------
+
+// Opt-in per site (options.reveal). Some sites only build their logout warning while
+// the tab is visible: a hidden tab runs no animation frames, so the warning never
+// appears and there's nothing to click, while the site's own timer logs you out. When
+// such a site's title turns into a warning in a hidden tab, content.js asks for the
+// tab to be shown; it clicks the warning, says so, and the previous tab comes back.
+// To the site this is the same as the user glancing at the tab.
+// Several sites can warn at once, so tabs are brought forward one at a time: each
+// switches back to the user's tab before the next one comes forward.
+const REVEAL_WAIT_MS = 3000;
+const revealing = new Map();   // tabId -> resolve(outcome), while it's in front
+const queued = new Set();      // tabIds waiting their turn
+const settled = new Set();     // queued tabs that sorted themselves out meanwhile
+let revealQueue = Promise.resolve();
+
+function queueReveal(tab) {
+  if (!tab?.id || queued.has(tab.id) || revealing.has(tab.id)) return;
+  queued.add(tab.id);
+  revealQueue = revealQueue.then(async () => {
+    queued.delete(tab.id);
+    if (settled.delete(tab.id)) return log(`reveal tab ${tab.id}: skipped, it was handled while waiting`);
+    await reveal(tab);
+  }).catch((e) => logError("reveal failed:", e));
+}
+
+async function reveal(tab) {
+  const host = tab.url ? new URL(tab.url).hostname : "";
+  const sites = await activeSites();
+  const { options } = await getLocal();
+  const entry = coveringEntry(sites, host);
+  if (!entry || !options[entry]?.reveal) return log(`reveal refused for ${host || "?"}: not enabled for this site`);
+  const win = await chrome.windows.get(tab.windowId);
+  if (win.state === "minimized") return log(`reveal ${host}: window is minimized, can't bring the tab forward`);
+  const [previous] = await chrome.tabs.query({ active: true, windowId: tab.windowId });
+  if (!previous || previous.id === tab.id) return;
+
+  const started = Date.now();
+  const done = new Promise((resolve) => {
+    revealing.set(tab.id, resolve);
+    setTimeout(() => resolve("no click within 3 s"), REVEAL_WAIT_MS);
+  });
+  await chrome.tabs.update(tab.id, { active: true });
+  log(`reveal ${host}: brought tab ${tab.id} forward (from tab ${previous.id})`);
+  const outcome = await done;
+  revealing.delete(tab.id);
+  // Switch back only if the revealed tab is still in front, so a tab the user picked
+  // in the meantime isn't taken away from them.
+  const [now] = await chrome.tabs.query({ active: true, windowId: tab.windowId });
+  const back = now?.id === tab.id;
+  if (back) await chrome.tabs.update(previous.id, { active: true }).catch(() => {});
+  log(`reveal ${host}: ${outcome}; ${back ? `back to tab ${previous.id}` : "left as is (you switched tabs)"} after ${Date.now() - started} ms`);
+}
+
+chrome.runtime.onMessage.addListener((msg, sender) => {
+  if (msg?.type === "idly:reveal") queueReveal(sender?.tab);
+  if (msg?.type === "idly:reveal-done") {
+    const id = sender?.tab?.id;
+    if (revealing.has(id)) revealing.get(id)(msg.outcome);
+    else if (queued.has(id)) settled.add(id);
+  }
   if (msg?.type === "idly:scheme") chrome.action.setIcon({ path: iconSet(msg.dark ? "dark" : "light") });
   if (msg?.type === "idly:commit") serial(commitPending);
   if (msg?.type === "idly:remove") serial(() => removeEntry(msg.entry));

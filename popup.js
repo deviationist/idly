@@ -90,7 +90,7 @@ function renderList() {
     const opts = options[entry] ?? {};
     const tags = document.createElement("span");
     tags.className = "tags";
-    tags.textContent = [opts.keepalive && "keepalive", opts.simulate && "simulates", opts.maxIdleMin && `caps ${opts.maxIdleMin}m`].filter(Boolean).join(" · ");
+    tags.textContent = [opts.keepalive && "keepalive", opts.simulate && "simulates", opts.reveal && "brings forward", opts.maxIdleMin && `caps ${opts.maxIdleMin}m`].filter(Boolean).join(" · ");
     const more = button("Options", `Options for ${entry}`, () => {
       openEntry = openEntry === entry ? null : entry;
       renderList();
@@ -131,14 +131,18 @@ function optionsPanel(entry, opts) {
     <div class="opt-form">
       <input id="${id}-cap" type="number" min="1" step="1" placeholder="never">
     </div>
-    <p class="hint">A cap you set: past this much inactivity, Idly stops extending and lets the site log you out. Blank = no cap.</p>`;
-  const [simulate, keepalive, cap] = li.querySelectorAll("input");
+    <p class="hint">A cap you set: past this much inactivity, Idly stops extending and lets the site log you out. Blank = no cap.</p>
+    <label class="check"><input type="checkbox"> Bring to front for the warning</label>
+    <p class="hint">For sites that only show their logout warning in a visible tab. When the tab's title turns into a warning while you're on another tab, Idly shows the tab for a moment, clicks the warning and switches back. Not while the window is minimized.</p>`;
+  const [simulate, keepalive, cap, reveal] = li.querySelectorAll("input");
   const error = li.querySelector(".error");
   simulate.checked = !!opts.simulate;
   keepalive.value = opts.keepalive ?? "";
   cap.value = opts.maxIdleMin ?? "";
   const save = (next) => chrome.runtime.sendMessage({ type: "idly:options", entry, options: { ...opts, ...next } });
+  reveal.checked = !!opts.reveal;
   simulate.onchange = () => save({ simulate: simulate.checked });
+  reveal.onchange = () => save({ reveal: reveal.checked });
   cap.onchange = () => {
     const n = Math.floor(Number(cap.value));
     const valid = Number.isFinite(n) && n >= 1;
