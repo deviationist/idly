@@ -5,7 +5,7 @@ if (!window.__idly) {
   // The decision logic and word lists live in detect.js / words.js, injected before
   // this script (see background.js). IdlyDetect.decide takes plain facts and says
   // which button to click, so it can be unit-tested without a browser.
-  const { decide, countingDown } = globalThis.IdlyDetect;
+  const { decide, countingDown, mentionsSession } = globalThis.IdlyDetect;
 
   // Debug logging (toggled in the popup footer, applies without a reload). Every
   // line is timestamped and prefixed so the page console is easy to filter.
@@ -81,13 +81,20 @@ if (!window.__idly) {
   let lastClick = 0;
   let clickPending = false;
 
+  // What the last dialog check saw, for the nudge log line.
+  let lastScan = "not run";
+
   function dismissSessionDialogs() {
-    if (clickPending || Date.now() - lastClick < CLICK_COOLDOWN_MS) return false;
+    if (clickPending || Date.now() - lastClick < CLICK_COOLDOWN_MS) {
+      lastScan = clickPending ? "click pending" : "cooling down after a click";
+      return false;
+    }
     const idleMs = Date.now() - lastInput;
 
     // Your own logout cap: past it, stop extending and let the site log you out.
     const capMs = Number(siteOptions.maxIdleMin) * 60 * 1000;
     if (capMs && idleMs >= capMs) {
+      lastScan = "past your inactivity cap";
       if (!pastCapLogged) {
         pastCapLogged = true;
         log(`past your ${siteOptions.maxIdleMin}-min inactivity cap; letting the session log out`);
@@ -95,10 +102,9 @@ if (!window.__idly) {
       return false;
     }
 
-    const candidates = deepQueryAll(
-      'dialog[open], [role="dialog"], [role="alertdialog"], [aria-modal="true"], .modal.show, .modal.in'
-    );
+    const candidates = deepQueryAll(DIALOG_SELECTOR);
     const dialogs = candidates.filter(visible);
+    lastScan = `${candidates.length} dialog(s), ${dialogs.length} visible`;
     for (const dlg of candidates) {
       if (dialogs.includes(dlg) || !debug) continue;
       const r = dlg.getBoundingClientRect();
@@ -204,19 +210,88 @@ if (!window.__idly) {
 
   // options: the site's settings from the popup, { simulate?, keepalive? }.
   function nudge(options = {}) {
-    dismissSessionDialogs();
+    noteTitle();
+    dismissSessionDialogs();   // the nudge line below logs what it saw
     if (options.simulate) simulateActivity();
     keepalive(options.keepalive);
     const idleMin = ((Date.now() - lastInput) / 60000).toFixed(1);
     const cap = options.maxIdleMin ? `, cap ${options.maxIdleMin}m` : "";
     const did = [options.simulate && "simulated activity", options.keepalive && "keepalive check"].filter(Boolean);
-    log(`nudge (tab ${document.visibilityState}, focus ${document.hasFocus()}, idle ${idleMin}m${cap})${did.length ? `: ${did.join(", ")}` : ""}`);
+    log(`nudge (tab ${document.visibilityState}, focus ${document.hasFocus()}, idle ${idleMin}m${cap}; ${lastScan})${did.length ? `: ${did.join(", ")}` : ""}`);
   }
 
-  chrome.storage.sync.get({ debug: false }).then((s) => { debug = s.debug; });
+  chrome.storage.sync.get({ debug: false }).then((s) => { debug = s.debug; syncHeartbeat(); });
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === "sync" && changes.debug) debug = changes.debug.newValue;
+    if (area === "sync" && changes.debug) { debug = changes.debug.newValue; syncHeartbeat(); }
   });
+
+  // Debug: every check logs what it saw, so "ran and found nothing" is distinguishable
+  // from "didn't run". Page-change checks can fire many times a second, so those are
+  // only logged when the result changes.
+  let lastPageScan = "";
+  function check(trigger) {
+    const clicked = dismissSessionDialogs();
+    if (!debug) return clicked;
+    if (trigger === "page change") {
+      if (lastScan === lastPageScan) return clicked;
+      lastPageScan = lastScan;
+    }
+    log(`check (${trigger}, tab ${document.visibilityState}): ${lastScan}`);
+    return clicked;
+  }
+
+  // Debug: a check every HEARTBEAT_MS, logged with the real gap since the last one.
+  // A hidden tab throttles timers, and the gap shows by how much.
+  const HEARTBEAT_MS = 5 * 1000;
+  let heartbeat = null;
+  let lastBeat = 0;   // performance.now(), which clock changes don't affect
+  function syncHeartbeat() {
+    if (debug && observer && !heartbeat) {
+      lastBeat = performance.now();
+      heartbeat = setInterval(() => {
+        const gap = ((performance.now() - lastBeat) / 1000).toFixed(1);
+        lastBeat = performance.now();
+        check(`heartbeat, +${gap} s`);
+      }, HEARTBEAT_MS);
+    } else if (!(debug && observer) && heartbeat) {
+      clearInterval(heartbeat);
+      heartbeat = null;
+    }
+  }
+
+  // Debug: log added elements that mention a session or logout, so a warning that
+  // doesn't match the dialog selector still shows up. Once per element.
+  const DIALOG_SELECTOR = 'dialog[open], [role="dialog"], [role="alertdialog"], [aria-modal="true"], .modal.show, .modal.in';
+  const seenText = new WeakSet();
+  const describe = (el) => {
+    const r = el.getBoundingClientRect();
+    const cls = [...el.classList].slice(0, 3).map((c) => `.${c}`).join("");
+    const role = el.getAttribute("role") ? ` role=${el.getAttribute("role")}` : "";
+    return `<${el.localName}${el.id ? `#${el.id}` : ""}${cls}${role}> ${Math.round(r.width)}x${Math.round(r.height)}`;
+  };
+  function noteSessionText(records) {
+    for (const rec of records) {
+      for (const node of rec.addedNodes) {
+        const el = node.nodeType === 1 ? node : node.parentElement;
+        if (!el || seenText.has(el) || el.closest("head, script, style, noscript, template")) continue;
+        const text = el.innerText || "";
+        if (text.length > 3000 || !mentionsSession(text)) continue;
+        seenText.add(el);
+        const inDialog = el.closest(DIALOG_SELECTOR) ? "inside a dialog" : "NOT inside a matched dialog";
+        log(`session text appeared (tab ${document.visibilityState}, ${inDialog}): ${describe(el)} "${text.replace(/\s+/g, " ").trim().slice(0, 80)}"`);
+      }
+    }
+  }
+
+  // Sites often change the tab title when their logout warning starts, even in a
+  // hidden tab that hasn't drawn the dialog yet, so debug mode logs each change.
+  let lastTitle = document.title;
+  function noteTitle() {
+    if (!debug || document.title === lastTitle) return;
+    lastTitle = document.title;
+    const hint = mentionsSession(lastTitle) ? " (reads like a session warning)" : "";
+    log(`title changed (tab ${document.visibilityState}): "${lastTitle}"${hint}`);
+  }
 
   // React as soon as a warning dialog appears rather than waiting for the next tick.
   // MutationObserver callbacks are not throttled the way timers are in background tabs.
@@ -224,12 +299,15 @@ if (!window.__idly) {
   let pending = false;
   function start() {
     if (observer) return;
-    observer = new MutationObserver(() => {
+    observer = new MutationObserver((records) => {
+      noteTitle();
+      if (debug) noteSessionText(records);
       if (pending) return;
       pending = true;
-      setTimeout(() => { pending = false; if (observer) dismissSessionDialogs(); }, 250);
+      setTimeout(() => { pending = false; if (observer) check("page change"); }, 250);
     });
     observer.observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["open", "class", "aria-hidden", "style"] });
+    syncHeartbeat();
   }
 
   // Sent when the site is removed from Idly's list. Losing the host permission
@@ -237,6 +315,7 @@ if (!window.__idly) {
   function stop() {
     observer?.disconnect();
     observer = null;
+    syncHeartbeat();
   }
 
   // The reply lets the service worker log what each nudge found.
@@ -248,5 +327,5 @@ if (!window.__idly) {
   });
 
   start();
-  dismissSessionDialogs();
+  check("script start");
 }

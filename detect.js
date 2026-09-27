@@ -32,6 +32,8 @@
   const HINT = new RegExp(globalThis.IdlyHints.map(escape).join("|"), "i");
 
   const hasSessionWords = (text) => WORDS.session.some((w) => text.includes(w));
+  // For debug logging: does a text such as the tab title read like a session warning?
+  const mentionsSession = (text) => hasSessionWords(normalize(text));
 
   function classify(label) {
     const l = normalize(label);
@@ -78,5 +80,5 @@
     return skip(others.length ? "several unknown buttons" : "no button to keep the session");
   }
 
-  globalThis.IdlyDetect = { decide, classify, countingDown, numbers, MIN_IDLE_MS };
+  globalThis.IdlyDetect = { decide, classify, countingDown, numbers, mentionsSession, MIN_IDLE_MS };
 })();

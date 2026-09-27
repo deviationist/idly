@@ -6,7 +6,7 @@ import assert from "node:assert/strict";
 
 await import("../words.js");
 await import("../detect.js");
-const { decide, classify, countingDown } = globalThis.IdlyDetect;
+const { decide, classify, countingDown, mentionsSession } = globalThis.IdlyDetect;
 
 const IDLE = 4 * 60 * 1000;
 const warning = (over) => ({ idleMs: IDLE, dialogLike: true, text: "", hints: "", countdown: false, buttons: [], ...over });
@@ -81,4 +81,10 @@ test("countingDown spots ticking numbers, including mm:ss", () => {
   assert.ok(!countingDown("Balance 5000", "Balance 5000"));
   assert.ok(!countingDown("Step 2 of 3", "Step 3 of 3"));
   assert.ok(!countingDown("Balance 5000", "Balance 3000"));
+});
+
+test("mentionsSession reads a warning title, not an ordinary one", () => {
+  assert.equal(mentionsSession("Økten utløper snart"), true);
+  assert.equal(mentionsSession("Your session is about to expire"), true);
+  assert.equal(mentionsSession("Accounts overview | Example Bank"), false);
 });
