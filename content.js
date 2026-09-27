@@ -1,6 +1,11 @@
 // Idly content script. It runs only on origins you enable in the popup.
-if (!window.__idly) {
-  window.__idly = true;
+// Guarded because it can be injected twice. After an extension reload the old copy
+// keeps running in open tabs, cut off from the extension ("Extension context
+// invalidated"), so an orphan is stopped and the new copy takes over.
+if (!window.__idly?.alive()) {
+  window.__idly?.stop();
+  const runtime = chrome.runtime;
+  window.__idly = { alive: () => { try { return !!runtime.id; } catch { return false; } }, stop: () => stop() };
 
   // The decision logic and word lists live in detect.js / words.js, injected before
   // this script (see background.js). IdlyDetect.decide takes plain facts and says
@@ -11,6 +16,17 @@ if (!window.__idly) {
   // line is timestamped and prefixed so the page console is easy to filter.
   let debug = false;
   const log = (...args) => { if (debug) console.info(`[Idly ${new Date().toLocaleTimeString()}]`, ...args); };
+
+  // Messages to the service worker. Once the extension has been reloaded, sendMessage
+  // throws rather than rejecting; this copy is then an orphan and switches itself off.
+  function send(msg) {
+    try {
+      return chrome.runtime.sendMessage(msg);
+    } catch {
+      stop();
+      return Promise.reject(new Error("extension reloaded"));
+    }
+  }
 
   // Debug: a warning "episode" starts at the first sign that a logout is coming (title,
   // session text, live region or dialog) and ends with a click, the page being left,
@@ -191,7 +207,7 @@ if (!window.__idly) {
         }
         log(`clicked "${label}" after ${waited} ms (planned ${planned} ms)`);
         endEpisode(`clicked "${label}"`);
-        chrome.runtime.sendMessage({ type: "idly:extended", host: location.hostname, label, waited }).catch(() => {});
+        send({ type: "idly:extended", host: location.hostname, label, waited }).catch(() => {});
         btn.click();
         finishReveal(`clicked "${label}"`);
       }, delay);
@@ -238,7 +254,7 @@ if (!window.__idly) {
       result = `failed: ${e.message}`;
     }
     log(`keepalive ${url}: ${result}`);
-    chrome.runtime.sendMessage({ type: "idly:keepalive", host: location.hostname, url, result }).catch(() => {});
+    send({ type: "idly:keepalive", host: location.hostname, url, result }).catch(() => {});
   }
 
   // options: the site's settings from the popup, { simulate?, keepalive? }.
@@ -393,12 +409,12 @@ if (!window.__idly) {
     revealAskedAt = Date.now();
     revealUntil = Date.now() + REVEAL_MAX_MS;
     signal("reveal", "asking to bring the tab forward for the warning");
-    chrome.runtime.sendMessage({ type: "idly:reveal" }).catch(() => { revealUntil = 0; });
+    send({ type: "idly:reveal" }).catch(() => { revealUntil = 0; });
   }
   function finishReveal(outcome) {
     if (!isRevealing()) return;
     revealUntil = 0;
-    chrome.runtime.sendMessage({ type: "idly:reveal-done", outcome }).catch(() => {});
+    send({ type: "idly:reveal-done", outcome }).catch(() => {});
   }
 
   // React as soon as a warning dialog appears rather than waiting for the next tick.
