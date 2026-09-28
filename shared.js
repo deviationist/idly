@@ -10,7 +10,8 @@ export const DEFAULTS = { intervalMin: 1, pageSubdomains: false, debug: false };
 // Per-device state. The list isn't synced because permissions aren't: a synced list
 // would show sites Idly can't access on the other device. "pending" is the entry
 // waiting for the permission prompt (see popup.js addEntry). "options" holds per-site
-// settings keyed by entry: { simulate?: true, keepalive?: "/path", maxIdleMin?: n, reveal?: true }.
+// settings keyed by entry: { simulate?: true, keepalive?: "/path", maxIdleMin?: n, reveal?: true,
+// pageCall?: { selector, method, capMethod? } }.
 export const LOCAL_DEFAULTS = { sites: [], pending: null, options: {} };
 
 // How often a site's keepalive request is sent, at most.
@@ -27,6 +28,8 @@ export const MESSAGES = {
   saveFailed: "Couldn't save. Try again.",
   keepaliveInvalid: "Enter a path such as /api/session, or a full https:// address.",
   keepaliveHost: (entry) => `The address must be on ${entry}.`,
+  pageCallSelector: "Enter the element, such as session-timer or #idle.",
+  pageCallMethod: "A method is a plain name such as resetTimer, with no brackets or dots.",
 };
 
 // A site entry is either an exact host ("example.com") or a wildcard ("*.example.com"),
@@ -154,4 +157,17 @@ export function clampInterval(value) {
 
 function listJoin(items) {
   return items.length < 2 ? items.join("") : `${items.slice(0, -1).join(", ")} and ${items.at(-1)}`;
+}
+
+// Validates a site's page timer: an element on the site's own page (a CSS selector,
+// also looked for inside shadow roots) and the names of its methods to call, on each
+// nudge and, optionally, once past the user's inactivity cap. Only names are stored;
+// Idly never stores or runs code from the settings. Empty fields remove the option.
+const METHOD_NAME = /^[A-Za-z_$][\w$]*$/;
+export function parsePageCall({ selector = "", method = "", capMethod = "" } = {}) {
+  const [sel, m, cm] = [selector, method, capMethod].map((v) => String(v).trim());
+  if (!sel && !m && !cm) return { call: null };
+  if (!sel || sel.length > 200) return { error: MESSAGES.pageCallSelector };
+  if (!METHOD_NAME.test(m) || (cm && !METHOD_NAME.test(cm))) return { error: MESSAGES.pageCallMethod };
+  return { call: { selector: sel, method: m, ...(cm && { capMethod: cm }) } };
 }

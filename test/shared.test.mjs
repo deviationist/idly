@@ -3,7 +3,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   parseInput, planAdd, covers, patternFor, stripWww, hasWildcardPrefix, clampInterval, MESSAGES,
-  entryFromOrigin, entriesFromOrigins, coveringEntry, parseKeepalive,
+  entryFromOrigin, entriesFromOrigins, coveringEntry, parseKeepalive, parsePageCall,
 } from "../shared.js";
 
 test("parseInput cleans hosts out of URLs", () => {
@@ -134,4 +134,17 @@ test("parseKeepalive accepts own-origin paths and covered https URLs only", () =
   assert.deepEqual(parseKeepalive("https://evil.example/ping", "*.bank.com"), { error: MESSAGES.keepaliveHost("*.bank.com") });
   for (const s of ["http://api.bank.com/ping", "//evil.example/x", "api/session", "javascript:alert(1)"])
     assert.ok(parseKeepalive(s, "*.bank.com").error, s);
+});
+
+test("parsePageCall stores names only: a selector and plain method names", () => {
+  assert.deepEqual(parsePageCall({}), { call: null });
+  assert.deepEqual(parsePageCall({ selector: " session-timer ", method: " resetTimer " }),
+    { call: { selector: "session-timer", method: "resetTimer" } });
+  assert.deepEqual(parsePageCall({ selector: "session-timer", method: "stop", capMethod: "start" }),
+    { call: { selector: "session-timer", method: "stop", capMethod: "start" } });
+  assert.deepEqual(parsePageCall({ method: "resetTimer" }), { error: MESSAGES.pageCallSelector });
+  for (const bad of ["", "reset()", "timer.reset", "alert(1)", "a b", "1st"]) {
+    assert.deepEqual(parsePageCall({ selector: "x", method: bad }), { error: MESSAGES.pageCallMethod }, bad);
+  }
+  assert.deepEqual(parsePageCall({ selector: "x", method: "stop", capMethod: "start()" }), { error: MESSAGES.pageCallMethod });
 });

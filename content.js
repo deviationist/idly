@@ -188,15 +188,17 @@ if (!window.__idly?.alive()) {
       }
       const label = labelOf(btn);
       const [lo, hi] = CLICK_DELAY_MS;
-      // While the tab is only in front for this click (see reveal), every millisecond
-      // is visible to the user, so there's no reaction delay.
-      const delay = isRevealing() ? 0 : lo + Math.random() * (hi - lo);
+      // No reaction delay while the tab is only in front for this click (see reveal),
+      // where the user sees every millisecond, nor in a hidden tab, where a timer is
+      // held back until the next wake-up, up to a minute, while a site's own logout
+      // tick may run at that same wake-up.
+      const delay = isRevealing() || document.hidden ? 0 : lo + Math.random() * (hi - lo);
       lastClick = Date.now();   // engage the cooldown now, so pending clicks don't stack
       clickPending = true;
       const planned = Math.round(delay);
       const scheduled = performance.now();
       logOnce(dlg, `button "${label}" chosen (${reason}); clicking in ${planned} ms`);
-      setTimeout(() => {
+      const fire = () => {
         clickPending = false;
         // Background tabs throttle timers, so the real wait can exceed the planned one.
         const waited = Math.round(performance.now() - scheduled);
@@ -210,7 +212,9 @@ if (!window.__idly?.alive()) {
         send({ type: "idly:extended", host: location.hostname, label, waited }).catch(() => {});
         btn.click();
         finishReveal(`clicked "${label}"`);
-      }, delay);
+      };
+      // Even a 0 ms timer waits for the next wake-up in a hidden tab, so click directly.
+      if (delay) setTimeout(fire, delay); else queueMicrotask(fire);
       return true;
     }
     return false;
@@ -257,16 +261,44 @@ if (!window.__idly?.alive()) {
     send({ type: "idly:keepalive", host: location.hostname, url, result }).catch(() => {});
   }
 
+  // A site's page timer (options.pageCall, see background.js pageCall): on each nudge,
+  // background.js calls the configured method on the site's own timer element. Past
+  // the user's inactivity cap it stops, and once calls the optional capMethod (say,
+  // one that switches a stopped timer back on), so the site logs out as it would.
+  let pageCallCapped = false;
+  let pageCallMissing = false;
+  function pageTimer(call) {
+    const idleMs = Date.now() - lastInput;
+    const capMs = Number(siteOptions.maxIdleMin) * 60 * 1000;
+    const pastCap = capMs && idleMs >= capMs;
+    if (pastCap && pageCallCapped) return;
+    pageCallCapped = !!pastCap;
+    const phase = pastCap ? "cap" : "keep";
+    const name = `${call.selector}.${pastCap ? call.capMethod ?? "(nothing)" : call.method}()`;
+    if (pastCap && !call.capMethod) return log(`page timer: past your cap, no longer calling ${call.selector}.${call.method}()`);
+    send({ type: "idly:page-call", phase }).then((r) => {
+      if (r?.error) return log(`page timer: ${name} failed: ${r.error}`);
+      if (!r?.found) {
+        if (!pageCallMissing) log(`page timer: no ${call.selector} in this ${window === top ? "page" : "frame"}`);
+        pageCallMissing = true;
+        return;
+      }
+      pageCallMissing = false;
+      log(`page timer: called ${name} on ${r.called} of ${r.found} element(s)${pastCap ? " (past your cap)" : ""}`);
+    }, () => {});
+  }
+
   // options: the site's settings from the popup, { simulate?, keepalive? }.
   function nudge(options = {}) {
     noteTitle();
     if (mentionsSession(document.title)) maybeReveal();
     dismissSessionDialogs();   // the nudge line below logs what it saw
+    if (options.pageCall) pageTimer(options.pageCall);
     if (options.simulate) simulateActivity();
     keepalive(options.keepalive);
     const idleMin = ((Date.now() - lastInput) / 60000).toFixed(1);
     const cap = options.maxIdleMin ? `, cap ${options.maxIdleMin}m` : "";
-    const did = [options.simulate && "simulated activity", options.keepalive && "keepalive check"].filter(Boolean);
+    const did = [options.pageCall && "page timer", options.simulate && "simulated activity", options.keepalive && "keepalive check"].filter(Boolean);
     log(`nudge (tab ${document.visibilityState}, focus ${document.hasFocus()}, idle ${idleMin}m${cap}; ${lastScan})${did.length ? `: ${did.join(", ")}` : ""}`);
   }
 
@@ -433,7 +465,11 @@ if (!window.__idly?.alive()) {
       if (isRevealing()) { watchShadowRoots(); check("page change"); return; }
       if (pending) return;
       pending = true;
-      setTimeout(() => { pending = false; if (observer) { watchShadowRoots(); check("page change"); } }, 250);
+      const run = () => { pending = false; if (observer) { watchShadowRoots(); check("page change"); } };
+      // A hidden tab holds timers back until its next wake-up (up to a minute), too late
+      // for a warning shown a minute before the logout, so check in a microtask there.
+      if (document.hidden) queueMicrotask(run);
+      else setTimeout(run, 250);
     });
     observer.observe(document.documentElement, OBSERVE);
     watchShadowRoots();

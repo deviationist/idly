@@ -276,3 +276,28 @@ test("tabs are brought forward one at a time, each returning to the user's tab",
   await settle();
   assert.deepEqual(activated, [8, 1, 9, 1]);
 });
+
+test("page timer: calls the stored method in the page's world, never anything from the message", async () => {
+  const injected = [];
+  chrome.scripting.executeScript = async (opts) => { injected.push(opts); return [{ result: { found: 1, called: 1 } }]; };
+  const tab = { id: 4, url: "https://netbank.bank.example/overview" };
+  const ask = (msg) => new Promise((resolve) => chrome.runtime.onMessage.fire(msg, { tab, frameId: 2 }, resolve));
+  await chrome.storage.local.set({ pending: "*.bank.example" });
+  userAllows("*://*.bank.example/*");
+  await settle();
+
+  assert.deepEqual(await ask({ type: "idly:page-call", phase: "keep" }), { skipped: "no page timer set for this site" });
+  assert.equal(injected.length, 0);
+
+  message({ type: "idly:options", entry: "*.bank.example",
+    options: { pageCall: { selector: "session-timer", method: "reset", capMethod: "start" } } });
+  await settle();
+  // A message can't choose what runs: extra fields are ignored.
+  assert.deepEqual(await ask({ type: "idly:page-call", phase: "keep", selector: "body", method: "remove" }), { found: 1, called: 1 });
+  assert.deepEqual(injected[0].args, ["session-timer", "reset"]);
+  assert.equal(injected[0].world, "MAIN");
+  assert.deepEqual(injected[0].target, { tabId: 4, frameIds: [2] });
+
+  await ask({ type: "idly:page-call", phase: "cap" });
+  assert.deepEqual(injected[1].args, ["session-timer", "start"]);
+});

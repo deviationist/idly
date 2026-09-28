@@ -248,7 +248,56 @@ async function reveal(tab) {
   log(`reveal ${host}: ${outcome}; ${back ? `back to tab ${previous.id}` : "left as is (you switched tabs)"} after ${Date.now() - started} ms`);
 }
 
-chrome.runtime.onMessage.addListener((msg, sender) => {
+// ---- Page timer ---------------------------------------------------------------------
+
+// Opt-in per site (options.pageCall). Some sites log you out from a timer on their own
+// page, a web component with a public method such as "user was active" or "stop". On
+// each nudge content.js asks for that method to be called, and this runs it in the
+// page's own JavaScript world (content scripts can't see page-defined methods). The
+// element and method come from the stored options, never from the message, and only
+// names are stored: nothing from the settings is ever run as code.
+async function pageCall(sender, phase) {
+  const tab = sender?.tab;
+  const host = tab?.url ? new URL(tab.url).hostname : "";
+  const sites = await activeSites();
+  const { options } = await getLocal();
+  const call = options[coveringEntry(sites, host)]?.pageCall;
+  const method = phase === "cap" ? call?.capMethod : call?.method;
+  if (!method) return { skipped: "no page timer set for this site" };
+  const [injection] = await chrome.scripting.executeScript({
+    target: { tabId: tab.id, frameIds: [sender.frameId ?? 0] },
+    world: "MAIN",
+    args: [call.selector, method],
+    func: callPageMethod,
+  });
+  const result = injection?.result ?? { error: "no result" };
+  if (result.called || result.error) log(`page timer on ${host}: ${call.selector}.${method}() → ${JSON.stringify(result)}`);
+  return result;
+}
+
+// Runs inside the page, so it must be self-contained. Calls method() on every element
+// matching selector, including inside shadow roots, and reports what it found.
+function callPageMethod(selector, method) {
+  const found = [];
+  const walk = (root) => {
+    found.push(...root.querySelectorAll(selector));
+    for (const el of root.querySelectorAll("*")) if (el.shadowRoot) walk(el.shadowRoot);
+  };
+  try { walk(document); } catch (e) { return { error: `bad selector: ${e.message}` }; }
+  let called = 0;
+  const errors = [];
+  for (const el of found) {
+    if (typeof el[method] !== "function") continue;
+    try { el[method](); called++; } catch (e) { errors.push(e.message); }
+  }
+  return { found: found.length, called, ...(errors.length && { error: errors[0] }) };
+}
+
+chrome.runtime.onMessage.addListener((msg, sender, reply) => {
+  if (msg?.type === "idly:page-call") {
+    pageCall(sender, msg.phase).then(reply, (e) => reply({ error: e.message }));
+    return true;   // replies asynchronously
+  }
   if (msg?.type === "idly:reveal") queueReveal(sender?.tab);
   if (msg?.type === "idly:reveal-done") {
     const id = sender?.tab?.id;

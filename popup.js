@@ -1,5 +1,5 @@
 import {
-  DEFAULTS, LOCAL_DEFAULTS, MESSAGES, KEEPALIVE_MIN, patternFor, baseOf, coveringEntry, parseKeepalive,
+  DEFAULTS, LOCAL_DEFAULTS, MESSAGES, KEEPALIVE_MIN, patternFor, baseOf, coveringEntry, parseKeepalive, parsePageCall,
   parseInput, planAdd, stripWww, hasWildcardPrefix, clampInterval,
 } from "./shared.js";
 
@@ -90,7 +90,7 @@ function renderList() {
     const opts = options[entry] ?? {};
     const tags = document.createElement("span");
     tags.className = "tags";
-    tags.textContent = [opts.keepalive && "keepalive", opts.simulate && "simulates", opts.reveal && "brings forward", opts.maxIdleMin && `caps ${opts.maxIdleMin}m`].filter(Boolean).join(" · ");
+    tags.textContent = [opts.keepalive && "keepalive", opts.simulate && "simulates", opts.reveal && "brings forward", opts.pageCall && "page timer", opts.maxIdleMin && `caps ${opts.maxIdleMin}m`].filter(Boolean).join(" · ");
     const more = button("Options", `Options for ${entry}`, () => {
       openEntry = openEntry === entry ? null : entry;
       renderList();
@@ -133,9 +133,20 @@ function optionsPanel(entry, opts) {
     </div>
     <p class="hint">A cap you set: past this much inactivity, Idly stops extending and lets the site log you out. Blank = no cap.</p>
     <label class="check"><input type="checkbox"> Bring to front for the warning</label>
-    <p class="hint">For sites that only show their logout warning in a visible tab. When the tab's title turns into a warning while you're on another tab, Idly shows the tab for a moment, clicks the warning and switches back. Not while the window is minimized.</p>`;
-  const [simulate, keepalive, cap, reveal] = li.querySelectorAll("input");
-  const error = li.querySelector(".error");
+    <p class="hint">For sites that only show their logout warning in a visible tab. When the tab's title turns into a warning while you're on another tab, Idly shows the tab for a moment, clicks the warning and switches back. Not while the window is minimized.</p>
+    <label class="opt-label" for="${id}-pc">Page timer (advanced)</label>
+    <form class="opt-form page-call">
+      <input id="${id}-pc" type="text" placeholder="element, e.g. session-timer" spellcheck="false" autocapitalize="off" aria-label="Timer element">
+    </form>
+    <form class="opt-form page-call">
+      <input type="text" placeholder="method, e.g. reset" spellcheck="false" autocapitalize="off" aria-label="Method to call each minute">
+      <input type="text" placeholder="past cap (optional)" spellcheck="false" autocapitalize="off" aria-label="Method to call once past your cap">
+      <button type="submit">Save</button>
+    </form>
+    <p class="error" role="alert"></p>
+    <p class="hint">For sites whose own page runs the logout timer. Once a minute, Idly calls this method of that element on the page, such as a timer's "user was active" method, found in DevTools. Past your cap it stops, and calls the optional second method once (say, one that turns a stopped timer back on). Empty all three to remove.</p>`;
+  const [simulate, keepalive, cap, reveal, pcSelector, pcMethod, pcCapMethod] = li.querySelectorAll("input");
+  const [error, pcError] = li.querySelectorAll(".error");
   simulate.checked = !!opts.simulate;
   keepalive.value = opts.keepalive ?? "";
   cap.value = opts.maxIdleMin ?? "";
@@ -155,6 +166,16 @@ function optionsPanel(entry, opts) {
     error.textContent = parsed.error ?? "";
     if (!parsed.error) save({ keepalive: parsed.url });
   };
+  pcSelector.value = opts.pageCall?.selector ?? "";
+  pcMethod.value = opts.pageCall?.method ?? "";
+  pcCapMethod.value = opts.pageCall?.capMethod ?? "";
+  const savePageCall = (e) => {
+    e.preventDefault();
+    const parsed = parsePageCall({ selector: pcSelector.value, method: pcMethod.value, capMethod: pcCapMethod.value });
+    pcError.textContent = parsed.error ?? "";
+    if (!parsed.error) save({ pageCall: parsed.call ?? undefined });
+  };
+  for (const form of li.querySelectorAll("form.page-call")) form.onsubmit = savePageCall;
   return li;
 }
 
