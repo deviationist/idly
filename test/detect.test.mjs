@@ -15,24 +15,25 @@ const clicks = (facts, label) => {
   assert.equal(d.index === null ? null : facts.buttons[d.index], label, d.reason);
 };
 
-test("a real Norwegian bank warning (anonymised)", () => {
+test("a Norwegian warning with a countdown and a close button", () => {
   clicks(warning({
-    text: "Inaktivitetsmelding Du har vært inaktiv i nettbanken en stund. Vi logger deg ut om 60 sekunder.",
+    text: "Du har vært inaktiv en stund. Du blir logget ut om 60 sekunder.",
     hints: "session-timeout-modal modal__body",
     countdown: true,
     buttons: ["Close", "Hold meg innlogget"],
   }), "Hold meg innlogget");
 });
 
-test("a Norwegian drawer with a countdown and a single stay button (anonymised)", () => {
+test("a Norwegian warning with a single stay button", () => {
   const drawer = {
-    text: "Du er i ferd med å bli logget ut pga. inaktivitet. Ønsker du fortsatt å være logget inn, vennligst trykk \"Jeg vil være innlogget\" Gjenstående tid: 6",
-    hints: "MuiDrawer-paper MuiDrawer-modal",
+    text: "Du blir snart logget ut på grunn av inaktivitet. Tid igjen: 6",
+    hints: "drawer-paper drawer-modal",
   };
   clicks(warning({ ...drawer, buttons: ["Jeg vil være innlogget"] }), "Jeg vil være innlogget");
   // Recognised as a stay label, so it's still chosen if a log-out button is added.
   clicks(warning({ ...drawer, buttons: ["Logg ut", "Jeg vil være innlogget", "Les mer"] }), "Jeg vil være innlogget");
 });
+
 test("warnings in other languages", () => {
   clicks(warning({ text: "Your session will expire in 2 minutes.", buttons: ["Log out", "Stay signed in"] }), "Stay signed in");
   clicks(warning({ text: "Du loggas snart ut på grund av inaktivitet.", buttons: ["Logga ut", "Fortsätt"] }), "Fortsätt");
@@ -93,7 +94,7 @@ test("countingDown spots ticking numbers, including mm:ss", () => {
 });
 
 test("mentionsSession reads a warning title, not an ordinary one", () => {
-  assert.equal(mentionsSession("Økten utløper snart"), true);
+  assert.equal(mentionsSession("Økten din utløper snart"), true);
   assert.equal(mentionsSession("Your session is about to expire"), true);
   assert.equal(mentionsSession("Accounts overview | Example Bank"), false);
 });

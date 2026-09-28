@@ -267,27 +267,32 @@ async function pageCall(sender, phase) {
   const [injection] = await chrome.scripting.executeScript({
     target: { tabId: tab.id, frameIds: [sender.frameId ?? 0] },
     world: "MAIN",
-    args: [call.selector, method],
+    args: [call.selector ?? "", method],
     func: callPageMethod,
   });
   const result = injection?.result ?? { error: "no result" };
-  if (result.called || result.error) log(`page timer on ${host}: ${call.selector}.${method}() → ${JSON.stringify(result)}`);
+  if (result.called || result.error) log(`page timer on ${host}: ${call.selector ? `${call.selector} → ` : ""}${method}() → ${JSON.stringify(result)}`);
   return result;
 }
 
-// Runs inside the page, so it must be self-contained. Calls method() on every element
-// matching selector, including inside shadow roots, and reports what it found.
+// Runs inside the page, so it must be self-contained. Calls method() on every custom
+// element (a tag with a hyphen, as web components are) that has it, including inside
+// shadow roots, optionally narrowed to those matching selector. Methods every element
+// has (reset on a form, click, focus, remove...) are never called: only a component's
+// own methods are.
 function callPageMethod(selector, method) {
+  if (method in HTMLElement.prototype || method in HTMLFormElement.prototype) return { error: `${method} is a built-in method` };
   const found = [];
   const walk = (root) => {
-    found.push(...root.querySelectorAll(selector));
-    for (const el of root.querySelectorAll("*")) if (el.shadowRoot) walk(el.shadowRoot);
+    for (const el of root.querySelectorAll("*")) {
+      if (el.localName.includes("-") && typeof el[method] === "function" && (!selector || el.matches(selector))) found.push(el);
+      if (el.shadowRoot) walk(el.shadowRoot);
+    }
   };
   try { walk(document); } catch (e) { return { error: `bad selector: ${e.message}` }; }
   let called = 0;
   const errors = [];
   for (const el of found) {
-    if (typeof el[method] !== "function") continue;
     try { el[method](); called++; } catch (e) { errors.push(e.message); }
   }
   return { found: found.length, called, ...(errors.length && { error: errors[0] }) };

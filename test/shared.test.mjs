@@ -136,15 +136,16 @@ test("parseKeepalive accepts own-origin paths and covered https URLs only", () =
     assert.ok(parseKeepalive(s, "*.bank.com").error, s);
 });
 
-test("parsePageCall stores names only: a selector and plain method names", () => {
+test("parsePageCall stores names only: a method, an optional selector and cap method", () => {
   assert.deepEqual(parsePageCall({}), { call: null });
-  assert.deepEqual(parsePageCall({ selector: " session-timer ", method: " resetTimer " }),
-    { call: { selector: "session-timer", method: "resetTimer" } });
-  assert.deepEqual(parsePageCall({ selector: "session-timer", method: "stop", capMethod: "start" }),
-    { call: { selector: "session-timer", method: "stop", capMethod: "start" } });
-  assert.deepEqual(parsePageCall({ method: "resetTimer" }), { error: MESSAGES.pageCallSelector });
-  for (const bad of ["", "reset()", "timer.reset", "alert(1)", "a b", "1st"]) {
-    assert.deepEqual(parsePageCall({ selector: "x", method: bad }), { error: MESSAGES.pageCallMethod }, bad);
+  assert.deepEqual(parsePageCall({ method: " resetTimer " }), { call: { method: "resetTimer" } });
+  assert.deepEqual(parsePageCall({ selector: " session-timer ", method: "resetTimer" }),
+    { call: { method: "resetTimer", selector: "session-timer" } });
+  assert.deepEqual(parsePageCall({ method: "stopTimer", capMethod: "startTimer" }),
+    { call: { method: "stopTimer", capMethod: "startTimer" } });
+  assert.deepEqual(parsePageCall({ selector: "session-timer" }), { error: MESSAGES.pageCallMethod });
+  for (const bad of ["reset()", "timer.reset", "alert(1)", "a b", "1st"]) {
+    assert.deepEqual(parsePageCall({ method: bad }), { error: MESSAGES.pageCallMethod }, bad);
   }
-  assert.deepEqual(parsePageCall({ selector: "x", method: "stop", capMethod: "start()" }), { error: MESSAGES.pageCallMethod });
+  assert.deepEqual(parsePageCall({ method: "stopTimer", capMethod: "start()" }), { error: MESSAGES.pageCallMethod });
 });

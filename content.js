@@ -274,12 +274,13 @@ if (!window.__idly?.alive()) {
     if (pastCap && pageCallCapped) return;
     pageCallCapped = !!pastCap;
     const phase = pastCap ? "cap" : "keep";
-    const name = `${call.selector}.${pastCap ? call.capMethod ?? "(nothing)" : call.method}()`;
-    if (pastCap && !call.capMethod) return log(`page timer: past your cap, no longer calling ${call.selector}.${call.method}()`);
+    const where = call.selector ? `${call.selector} → ` : "";
+    const name = `${where}${pastCap ? call.capMethod : call.method}()`;
+    if (pastCap && !call.capMethod) return log(`page timer: past your cap, no longer calling ${where}${call.method}()`);
     send({ type: "idly:page-call", phase }).then((r) => {
       if (r?.error) return log(`page timer: ${name} failed: ${r.error}`);
       if (!r?.found) {
-        if (!pageCallMissing) log(`page timer: no ${call.selector} in this ${window === top ? "page" : "frame"}`);
+        if (!pageCallMissing) log(`page timer: nothing in this ${window === top ? "page" : "frame"} has ${name}`);
         pageCallMissing = true;
         return;
       }

@@ -134,18 +134,22 @@ function optionsPanel(entry, opts) {
     <p class="hint">A cap you set: past this much inactivity, Idly stops extending and lets the site log you out. Blank = no cap.</p>
     <label class="check"><input type="checkbox"> Bring to front for the warning</label>
     <p class="hint">For sites that only show their logout warning in a visible tab. When the tab's title turns into a warning while you're on another tab, Idly shows the tab for a moment, clicks the warning and switches back. Not while the window is minimized.</p>
-    <label class="opt-label" for="${id}-pc">Page timer (advanced)</label>
-    <form class="opt-form page-call">
-      <input id="${id}-pc" type="text" placeholder="element, e.g. session-timer" spellcheck="false" autocapitalize="off" aria-label="Timer element">
-    </form>
-    <form class="opt-form page-call">
-      <input type="text" placeholder="method, e.g. reset" spellcheck="false" autocapitalize="off" aria-label="Method to call each minute">
-      <input type="text" placeholder="past cap (optional)" spellcheck="false" autocapitalize="off" aria-label="Method to call once past your cap">
-      <button type="submit">Save</button>
+    <p class="opt-head">Page timer (advanced)</p>
+    <p class="hint">For sites whose own page runs the logout timer, as a web component with a method such as "user was active". Names only, no JavaScript: every nudge, Idly calls that method on the page's components that have it, also inside shadow roots. Built-in methods (reset, click, remove...) are never called.</p>
+    <form class="page-call">
+      <label class="opt-label" for="${id}-pcm">Method to call every nudge</label>
+      <div class="opt-form"><input id="${id}-pcm" type="text" placeholder="resetTimer" spellcheck="false" autocapitalize="off"></div>
+      <label class="opt-label" for="${id}-pc">Only on this element (optional, CSS selector)</label>
+      <div class="opt-form"><input id="${id}-pc" type="text" placeholder="any component" spellcheck="false" autocapitalize="off"></div>
+      <label class="opt-label" for="${id}-pcc">Method to call once past your cap (optional)</label>
+      <div class="opt-form">
+        <input id="${id}-pcc" type="text" placeholder="startTimer" spellcheck="false" autocapitalize="off">
+        <button type="submit">Save</button>
+      </div>
     </form>
     <p class="error" role="alert"></p>
-    <p class="hint">For sites whose own page runs the logout timer. Once a minute, Idly calls this method of that element on the page, such as a timer's "user was active" method, found in DevTools. Past your cap it stops, and calls the optional second method once (say, one that turns a stopped timer back on). Empty all three to remove.</p>`;
-  const [simulate, keepalive, cap, reveal, pcSelector, pcMethod, pcCapMethod] = li.querySelectorAll("input");
+    <p class="hint page-call-preview"></p>`;
+  const [simulate, keepalive, cap, reveal, pcMethod, pcSelector, pcCapMethod] = li.querySelectorAll("input");
   const [error, pcError] = li.querySelectorAll(".error");
   simulate.checked = !!opts.simulate;
   keepalive.value = opts.keepalive ?? "";
@@ -169,13 +173,24 @@ function optionsPanel(entry, opts) {
   pcSelector.value = opts.pageCall?.selector ?? "";
   pcMethod.value = opts.pageCall?.method ?? "";
   pcCapMethod.value = opts.pageCall?.capMethod ?? "";
+  // Spells out what the three fields will do, as they're typed.
+  const preview = li.querySelector(".page-call-preview");
+  const showPreview = () => {
+    const parsed = parsePageCall({ selector: pcSelector.value, method: pcMethod.value, capMethod: pcCapMethod.value });
+    const call = parsed.call;
+    preview.textContent = parsed.error ? "" : !call ? "Off. Enter a method name to turn it on; empty the fields and Save to remove it."
+      : `Idly will call ${call.method}() on ${call.selector ? `components matching ${call.selector}` : "any component that has it"} about every ${$("interval").value || 1} min` +
+        (call.capMethod ? `, and ${call.capMethod}() once past your cap.` : ", and stop past your cap.");
+  };
+  for (const input of [pcSelector, pcMethod, pcCapMethod]) input.oninput = showPreview;
   const savePageCall = (e) => {
     e.preventDefault();
     const parsed = parsePageCall({ selector: pcSelector.value, method: pcMethod.value, capMethod: pcCapMethod.value });
     pcError.textContent = parsed.error ?? "";
     if (!parsed.error) save({ pageCall: parsed.call ?? undefined });
   };
-  for (const form of li.querySelectorAll("form.page-call")) form.onsubmit = savePageCall;
+  li.querySelector("form.page-call").onsubmit = savePageCall;
+  showPreview();
   return li;
 }
 
