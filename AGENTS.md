@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Idly is a Chromium extension that keeps chosen sites from logging the user out for inactivity (an admin panel, dashboard, webmail or bank with a short idle timeout). See `README.md` for what it does from the user's side.
+Idly is a site-agnostic Chromium extension that keeps chosen sites from logging the user out for inactivity (an admin panel, dashboard, webmail or bank with a short idle timeout). It does so with per-site **strategies**: clicking the site's own warning (always on), a keepalive request, a page timer call, bringing a background tab forward, or simulated activity. See `README.md` for what each does and how to choose; this file is about how they're built.
 
 ## Stack and ground rules
 
@@ -16,17 +16,17 @@ Idly is a Chromium extension that keeps chosen sites from logging the user out f
 |---|---|
 | `manifest.json` | Permissions: `storage`, `alarms`, `scripting`, `activeTab`, `offscreen`. Host access is an **optional** `*://*/*`, granted per entry at runtime |
 | `shared.js` | Pure site-entry logic with no browser APIs: `parseInput` (cleaning and validation), `planAdd` (duplicate and overlap rules), `entriesFromOrigins` (granted patterns to entries, for pruning and migration), `covers`, `patternFor`, `stripWww`, `clampInterval`, `DEFAULTS` / `LOCAL_DEFAULTS`, and the user-facing `MESSAGES` |
-| `background.js` | Service worker and **the only writer of the list**. It commits pending entries once their grant exists (`permissions.onAdded`, or an `idly:commit` message when the browser skipped the prompt), removes entries (`idly:remove`), unlists sites the user revoked in the browser (`permissions.onRemoved`), and revokes grants nothing listed needs (`pruneGrants`). Whenever the list changes, `apply` registers `content.js` for listed sites that have access, injects into open tabs, sends `idly:stop` to every other tab, and sets the badge and `autoDiscardable: false` (Memory Saver would otherwise discard a background tab, which silences Idly and reloads the tab into a login page). The alarm tick nudges each enabled tab (via `nudgeTabs`) after a random 1–3 s delay, and a change to a site's options nudges immediately so a new cap/keepalive/simulate applies without waiting for the next tick. It also swaps the toolbar icon on `{type: "idly:scheme"}`. Changes run one at a time through `serial` |
+| `background.js` | Service worker and **the only writer of the list**. It commits pending entries once their grant exists (`permissions.onAdded`, or an `idly:commit` message when the browser skipped the prompt), removes entries (`idly:remove`), unlists sites the user revoked in the browser (`permissions.onRemoved`), and revokes grants nothing listed needs (`pruneGrants`). Whenever the list changes, `apply` registers `content.js` for listed sites that have access, injects into open tabs, sends `idly:stop` to every other tab, and sets the badge and `autoDiscardable: false` (Memory Saver would otherwise discard a background tab, which silences Idly and reloads the tab into a login page). The alarm tick nudges each enabled tab (via `nudgeTabs`) with its site's options after a random 1–3 s delay, and a change to a site's options nudges immediately. It brings tabs forward for their warning (`idly:reveal` / `idly:reveal-done`, one at a time through `queueReveal`) and runs page timer calls (`idly:page-call` → `callPageMethod` in the page's world). It also swaps the toolbar icon on `{type: "idly:scheme"}`. List changes run one at a time through `serial` |
 | `offscreen.html` / `offscreen.js` | Hidden offscreen document (reason `MATCH_MEDIA`). Service workers have no `matchMedia`, so this page reports light or dark to `background.js` |
 | `words.js` | Data only: per-language word lists (session / stay / leave / dismiss) and English class-name hints. Sets `globalThis.IdlyWords` / `IdlyHints`. Edit freely; no logic |
 | `detect.js` | Pure decision logic (`globalThis.IdlyDetect.decide`): given plain facts about a dialog, returns which button to click, or null with a reason. Idle-gated and evidence-based (see below). Runs under Node in tests |
-| `content.js` | Injected as `words.js`, `detect.js`, `content.js` in that order. On a nudge: gathers dialog facts and lets `decide` pick the button to click; sends the site's keepalive GET when due (randomised to 70–130% of 5 minutes); and **only if the site opted in** (`simulate`), dispatches synthetic mouse, pointer, Shift and scroll events. A site's `maxIdleMin` is a self-imposed logout cap: past that much idle, `dismissSessionDialogs` stops clicking so the site logs you out. A `MutationObserver` also dismisses dialogs as soon as they appear. Guarded by `window.__idly` because it can be injected twice |
-| `popup.html` / `popup.js` | GUI: the This page card, the list of active websites, the add form, the nudge interval |
+| `content.js` | Injected as `words.js`, `detect.js`, `content.js` in that order. Dialogs: a `MutationObserver` (also on open shadow roots) and every nudge gather dialog facts and let `decide` pick the button; the click comes after a 50–500 ms reaction delay, or at once in a hidden tab or while revealed. On a nudge it also sends the site's keepalive GET when due (randomised to 70–130% of 5 minutes), asks for the page timer call (`options.pageCall`), and **only if the site opted in** (`simulate`) dispatches synthetic mouse, pointer, Shift and scroll events. It watches the title and, for sites with `reveal`, asks for the tab to be brought forward on a warning title. A site's `maxIdleMin` is a self-imposed logout cap: past it, clicks and page timer calls stop. With debug on it logs every check, a 5 s heartbeat, and warning signals grouped into episodes. `window.__idly` guards against double injection and lets a fresh copy replace one orphaned by an extension reload; messages go through `send()`, which switches an orphan off |
+| `popup.html` / `popup.js` | GUI: the This page card, the list of active websites with each site's Options panel (simulate, keepalive, cap, bring to front, page timer), the add form, the nudge interval, debug logging |
 | `icons/light/`, `icons/dark/` | Toolbar icons: deep green (design option b) for light toolbars, pale green (option c) for dark ones. The manifest points at `light/` |
 | `design/` | The Claude Design handoff. See "GUI and design" |
 | `test/shared.test.mjs` | Unit tests for `shared.js` |
-| `test/detect.test.mjs` | Runs `detect.js` against real-world (anonymised) and decoy dialogs: idle-gating, evidence, button choice, and that logout/close/cancel/payment are never clicked |
-| `test/background.test.mjs` | Runs `background.js` against a small fake `chrome.*`, covering add, remove, replace and revoke flows |
+| `test/detect.test.mjs` | Runs `detect.js` against generic warning texts and decoy dialogs: idle-gating, evidence, button choice, and that logout/close/cancel/payment are never clicked |
+| `test/background.test.mjs` | Runs `background.js` against a small fake `chrome.*`, covering add, remove, replace and revoke flows, bringing tabs forward (including the queue) and page timer calls |
 
 **State:** Idly keeps **its own list** of websites, and host permissions only say what Idly may touch. The two differ on purpose:
 - `chrome.permissions.remove` only drops the *active* permission. The browser keeps the grant on record (listed under Site access) until the user clears it there.
@@ -97,22 +97,22 @@ A site is active when it's listed **and** Idly has access to it. The popup and b
 
 Nothing in `design/` ships or is loaded by the extension. Square popup corners are accepted. The browser draws the popup frame, and a transparent page background doesn't help (tested: the browser paints an opaque background behind it). The rounded card in the mockups is only presentation. The only known workaround is a fake popup injected into the web page with a content script, and it was rejected: it would draw our UI inside third-party pages, can't appear on browser pages, and would need broader permissions.
 
-## Adding support for a site or language
+## Supporting a new site
 
-Most sites need no code, only words. When a warning isn't dismissed, capture it (below), then edit `words.js`:
-1. Add the warning's distinctive word(s) to that language's `session`.
+Choose a strategy before touching code. Most sites need none: the README's **Choosing a strategy** section maps what the debug log shows to the option that fits, and all of them are per-site settings. Only a warning Idly doesn't recognise needs a change here, and that is data:
+1. Add the warning's distinctive word(s) to that language's `session` in `words.js`.
 2. Add the button label to `stay`; add a matching log-out label to `leave` if one isn't covered.
-3. If the dialog isn't matched at all, extend the dialog selector in `dismissSessionDialogs` (`content.js`).
-4. Add the text and label to `test/detect.test.mjs`, anonymised: generic wording only, never the site's name or class names.
+3. If the dialog isn't matched at all, extend the dialog selector (`DIALOG_SELECTOR` in `content.js`).
+4. Add the text and label to `test/detect.test.mjs` as generic wording: never a site's name, verbatim copy or class names.
 
-Prefer widening the language data over per-site code: it helps every site and keeps the repo free of any one site's identifiers.
+Prefer widening the language data over per-site code: it helps every site and keeps the repo free of any one site's identifiers. A site's own values (its timer method, keepalive path) belong in the user's settings, never in the repo.
 
 ### Capturing a warning
 
 Warnings appear shortly before a logout, often only a minute before it, and real input such as moving the pointer over the page resets the site's timer. So capture without touching the page:
-1. Detach the browser's DevTools into its own window and turn on **Preserve log** in its Console.
-2. Right after loading the page, run a `MutationObserver` in the Console that logs the `outerHTML` of added nodes that are dialog-like or mention logging out.
-3. Keep the pointer away from the window. A changed tab title is often the first sign that the warning is up.
+1. Turn on **Debug logging**, detach the site's DevTools into its own window and turn on **Preserve log**.
+2. Put the tab in the background and keep the pointer away. The `signal …` lines (`title-warning`, `session-text`, `live-region`, `dialog`) and the episode summary show what the page did, and when, without any manual observer.
+3. Only if that isn't enough, log the `outerHTML` of added dialog-like nodes from the Console.
 
 ## Verifying changes
 
@@ -120,6 +120,7 @@ Warnings appear shortly before a logout, often only a minute before it, and real
 - **Syntax:** `node --check content.js`, and for each module `node --check --input-type=module < file.js`.
 - **Popup:** from a scratch directory, not this repo, serve a copy of `popup.html` with `window.chrome` stubbed (storage, `tabs.query`, `permissions.request`). Load each mockup state and screenshot it in both light and dark (for example with Playwright's `emulateMedia`), then compare against `Idly Mockups`.
 - **Content script:** serve a mock page that stubs `window.chrome.runtime.onMessage` and loads `content.js`. Include a session-warning dialog (one inside a shadow root) and a decoy payment dialog with a "Continue" button. Fire a nudge and assert that only the session dialog's button was clicked.
-- **Debug mode:** tick **Debug logging** in the popup footer. The service worker's Console (open it from `brave://extensions` → Idly → **Inspect views** → service worker) then shows a timeline: ticks, each tab nudged with its visibility and focus, warnings clicked, and sites added, removed or stopped. The page's Console shows a line per nudge. Keep new logging behind `log()` in `background.js` or the `debug` flag in `content.js`, so nothing is logged by default. Errors are always logged.
+- **Debug mode:** tick **Debug logging** in the popup footer. The service worker's Console (open it from `brave://extensions` → Idly → **Inspect views** → service worker) then shows a timeline: ticks, each tab nudged with its visibility and focus, warnings clicked, tabs brought forward, page timer results, and sites added, removed or stopped. The page's Console shows each nudge and check, the heartbeat, warning signals and episodes, and page timer calls. Keep new logging behind `log()` in `background.js` or `signal()`/the `debug` flag in `content.js`, so nothing is logged by default. Errors are always logged.
+- **Background tabs:** Playwright keeps its pages visible and unthrottled, even without its background-throttling flags, so hidden-tab behaviour (throttled timers, no animation frames, a warning never built) can't be reproduced there. Mock `document.hidden` for unit-level checks, and confirm in a real browser with the tab behind another one: the heartbeat's `+60 s` gaps show real throttling.
 - **Full extension:** a manual pass. Reload it in `chrome://extensions`, add an entry, check the **ON** badge, switch the browser between light and dark to watch the toolbar icon, and read the `[Idly]` logs in the page console.
 - Don't leave test pages or `.playwright-mcp/` output in the repo.
